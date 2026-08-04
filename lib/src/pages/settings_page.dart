@@ -4847,6 +4847,13 @@ class _AutoRetryDelayInputState extends State<_AutoRetryDelayInput> {
   }
 }
 
+/// 在组件被程序性卸载（例如新下载弹窗切走当前路由）时延后一帧执行持久化。
+/// 避免在 dispose() 阶段同步触碰 ChangeNotifier.notifyListeners 触发
+/// setState during build 断言。
+void _commitOnUnmount(VoidCallback commit) {
+  WidgetsBinding.instance.addPostFrameCallback((_) => commit());
+}
+
 // ─────────────────────────────────────────────
 // UA 编辑器
 // ─────────────────────────────────────────────
@@ -4862,6 +4869,7 @@ class _UserAgentEditor extends StatefulWidget {
 
 class _UserAgentEditorState extends State<_UserAgentEditor> {
   late TextEditingController _controller;
+  late FocusNode _focusNode;
   late String _selectedPreset;
 
   @override
@@ -4870,13 +4878,21 @@ class _UserAgentEditorState extends State<_UserAgentEditor> {
     final ua = widget.settingsProvider.globalUserAgent;
     _controller = TextEditingController(text: ua);
     _selectedPreset = detectUaPreset(ua);
+    _focusNode = FocusNode();
+    _focusNode.addListener(() {
+      // 失焦时持久化（与 _FileManagerCmdInput 一致），避免未回车直接离开
+      // 设置页导致刚输入的自定义 UA 被丢弃（#266）
+      if (!_focusNode.hasFocus) _commit();
+    });
   }
 
   @override
   void didUpdateWidget(_UserAgentEditor oldWidget) {
     super.didUpdateWidget(oldWidget);
     final ua = widget.settingsProvider.globalUserAgent;
-    if (ua != _controller.text) {
+    // 仅在未聚焦（用户未编辑）时才用外部值回填，避免编辑过程中被外部
+    // rebuild 回灌旧值
+    if (!_focusNode.hasFocus && ua != _controller.text) {
       _controller.text = ua;
       _selectedPreset = detectUaPreset(ua);
     }
@@ -4884,7 +4900,15 @@ class _UserAgentEditorState extends State<_UserAgentEditor> {
 
   @override
   void dispose() {
+    // 失焦提交在程序性卸载时不会触发（见 _commitOnUnmount），文本与已生效
+    // 值不等即说明有未提交的编辑，按值兜底一次。
+    final ua = _controller.text;
+    final sp = widget.settingsProvider;
+    if (ua != sp.globalUserAgent) {
+      _commitOnUnmount(() => sp.setGlobalUserAgent(ua));
+    }
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -4907,8 +4931,8 @@ class _UserAgentEditorState extends State<_UserAgentEditor> {
     }
   }
 
-  void _onSubmit(String value) {
-    widget.settingsProvider.setGlobalUserAgent(value);
+  void _commit() {
+    widget.settingsProvider.setGlobalUserAgent(_controller.text);
   }
 
   @override
@@ -4952,9 +4976,10 @@ class _UserAgentEditorState extends State<_UserAgentEditor> {
         Expanded(
           child: ShadInput(
             controller: _controller,
+            focusNode: _focusNode,
             placeholder: Text(s.userAgentPlaceholder),
             onChanged: _onTextChanged,
-            onSubmitted: _onSubmit,
+            onSubmitted: (_) => _commit(),
           ),
         ),
       ],
@@ -5006,6 +5031,12 @@ class _FileManagerCmdInputState extends State<_FileManagerCmdInput> {
 
   @override
   void dispose() {
+    // 失焦提交在程序性卸载时不会触发（见 _commitOnUnmount），按值兜底一次。
+    final cmd = _controller.text;
+    final sp = widget.settingsProvider;
+    if (cmd != sp.revealFileCmd) {
+      _commitOnUnmount(() => sp.setRevealFileCmd(cmd));
+    }
     _controller.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -9902,6 +9933,7 @@ class _CustomColorPicker extends StatefulWidget {
 
 class _CustomColorPickerState extends State<_CustomColorPicker> {
   late TextEditingController _hexController;
+  late FocusNode _hexFocusNode;
   late double _hue;
   late double _saturation;
   late double _lightness;
@@ -9914,6 +9946,7 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
     _saturation = hsl.saturation;
     _lightness = hsl.lightness;
     _hexController = TextEditingController(text: _colorToHex(widget.color));
+    _hexFocusNode = FocusNode()..addListener(_onHexFocusChange);
   }
 
   @override
@@ -9933,6 +9966,15 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
 
   @override
   void dispose() {
+    // 手输 hex 未回车就被程序性卸载时的兜底（滑块是即时提交，只有手输
+    // 这一条路径需要补）；见 _commitOnUnmount。
+    final color = _parseHex(_hexController.text);
+    if (color != null && color != widget.color) {
+      final onChanged = widget.onChanged;
+      _commitOnUnmount(() => onChanged(color));
+    }
+    _hexFocusNode.removeListener(_onHexFocusChange);
+    _hexFocusNode.dispose();
     _hexController.dispose();
     super.dispose();
   }
@@ -9968,12 +10010,27 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
     widget.onChanged(color);
   }
 
-  void _onHexSubmitted(String value) {
+  void _onHexFocusChange() {
+    if (!_hexFocusNode.hasFocus) _commitHex(_hexController.text);
+  }
+
+  /// 解析 6 位 hex 文本（可带 #）；非法返回 null。
+  static Color? _parseHex(String value) {
     final hex = value.replaceAll('#', '').trim();
-    if (hex.length != 6) return;
+    if (hex.length != 6) return null;
     final parsed = int.tryParse(hex, radix: 16);
-    if (parsed == null) return;
-    final color = Color(0xFF000000 | parsed);
+    if (parsed == null) return null;
+    return Color(0xFF000000 | parsed);
+  }
+
+  /// 提交 hex 输入（失焦或回车）。非法输入回退为当前生效颜色的文本，
+  /// 避免输入框停在一个永远不会生效的半成品值上。
+  void _commitHex(String value) {
+    final color = _parseHex(value);
+    if (color == null) {
+      _hexController.text = _colorToHex(widget.color);
+      return;
+    }
     final hsl = HSLColor.fromColor(color);
     setState(() {
       _hue = hsl.hue;
@@ -10042,8 +10099,9 @@ class _CustomColorPickerState extends State<_CustomColorPicker> {
               width: 90,
               child: ShadInput(
                 controller: _hexController,
+                focusNode: _hexFocusNode,
                 placeholder: const Text('3B82F6'),
-                onSubmitted: _onHexSubmitted,
+                onSubmitted: _commitHex,
               ),
             ),
           ],
