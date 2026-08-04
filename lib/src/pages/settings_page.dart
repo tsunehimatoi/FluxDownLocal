@@ -41,6 +41,7 @@ import '../widgets/webhook_endpoint_dialog.dart';
 import '../widgets/webhook_endpoint_list.dart';
 import '../widgets/thread_selector.dart';
 import '../widgets/title_drag_area.dart';
+import '../widgets/doctor_report_view.dart';
 
 // ─────────────────────────────────────────────
 // 设置分类枚举
@@ -55,6 +56,7 @@ enum SettingsCategory {
   proxy(icon: LucideIcons.globe),
   apiService(icon: LucideIcons.server),
   notify(icon: LucideIcons.bellRing),
+  doctor(icon: LucideIcons.stethoscope),
   about(icon: LucideIcons.info);
 
   final IconData icon;
@@ -74,6 +76,7 @@ extension SettingsCategoryI18n on SettingsCategory {
       SettingsCategory.proxy => s.settingsCatProxy,
       SettingsCategory.apiService => s.settingsCatApiService,
       SettingsCategory.notify => s.settingsCatNotify,
+      SettingsCategory.doctor => s.settingsCatDoctor,
       SettingsCategory.about => s.settingsCatAbout,
     };
   }
@@ -89,6 +92,7 @@ extension SettingsCategoryI18n on SettingsCategory {
       SettingsCategory.proxy => s.settingsCatProxyDesc,
       SettingsCategory.apiService => s.settingsCatApiServiceDesc,
       SettingsCategory.notify => s.settingsCatNotifyDesc,
+      SettingsCategory.doctor => s.settingsCatDoctorDesc,
       SettingsCategory.about => s.settingsCatAboutDesc,
     };
   }
@@ -480,6 +484,27 @@ List<SettingsSearchItem> get settingsSearchItems {
       description: s.apiServiceEnableDesc,
       keywords: s.searchKeywordsApiService,
       icon: LucideIcons.server,
+    ),
+    SettingsSearchItem(
+      category: SettingsCategory.doctor,
+      label: s.doctorTitle,
+      description: s.doctorDesc,
+      keywords: s.searchKeywordsDoctor,
+      icon: LucideIcons.stethoscope,
+    ),
+    SettingsSearchItem(
+      category: SettingsCategory.doctor,
+      label: s.doctorRepairNmh,
+      description: s.doctorCheckNmhBrowser,
+      keywords: s.searchKeywordsDoctor,
+      icon: LucideIcons.wrench,
+    ),
+    SettingsSearchItem(
+      category: SettingsCategory.doctor,
+      label: s.doctorCopyReport,
+      description: s.doctorDesc,
+      keywords: s.searchKeywordsDoctor,
+      icon: LucideIcons.clipboardCopy,
     ),
     SettingsSearchItem(
       category: SettingsCategory.about,
@@ -1332,6 +1357,9 @@ class _SettingsContentState extends State<_SettingsContent> {
         settingsProvider: settingsProvider,
         downloadController: widget.downloadController,
       ),
+      SettingsCategory.doctor => DoctorReportView(
+        settingsProvider: settingsProvider,
+      ),
       SettingsCategory.about => _AboutContent(
         settingsProvider: settingsProvider,
       ),
@@ -1362,23 +1390,34 @@ class _SectionHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          category.localizedLabel,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: c.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          category.localizedDesc,
-          style: TextStyle(fontSize: 12, color: c.textMuted),
+        // 标题与描述同行（基线对齐），压缩头部高度、让出纵向空间给内容
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.baseline,
+          textBaseline: TextBaseline.alphabetic,
+          children: [
+            Text(
+              category.localizedLabel,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: c.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                category.localizedDesc,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: c.textMuted),
+              ),
+            ),
+          ],
         ),
         if (tabs.isEmpty)
-          const SizedBox(height: 14)
+          const SizedBox(height: 12)
         else ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           // Tab 栏：选中态下划线紧贴头部底边的全宽发丝线
           Row(
             children: [
