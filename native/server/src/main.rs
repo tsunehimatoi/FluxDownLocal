@@ -192,6 +192,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if let Some(v) = all_cfg.get("file_exists_behavior") {
         engine.manager.set_file_exists_overwrite(v == "overwrite");
     }
+    // 任务的文件被删除/移动时的动作（"keep"=保留任务记录，默认；
+    // "delete"=文件消失后自动删除任务记录）。
+    if let Some(v) = all_cfg.get("file_missing_action") {
+        engine.manager.set_missing_file_auto_delete(v == "delete");
+    }
 
     // 进度上报旁路：progress_rx 独立消费（不 spawn 则无任何进度事件）。
     if let Some(rx) = engine.manager.take_progress_rx() {
@@ -209,6 +214,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .manager
         .take_retry_rx()
         .ok_or("take_retry_rx returned None (already taken)")?;
+    let missing_cleanup_rx = engine
+        .manager
+        .take_missing_cleanup_rx()
+        .ok_or("take_missing_cleanup_rx returned None (already taken)")?;
+
     let db_handle = engine.db.clone();
     let selector_handle = engine.selector.clone();
     // 组件 API（ffmpeg 探测/安装）不走 actor，直接持 Db + data_dir；取自
@@ -217,7 +227,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // actor 独占 engine；HTTP 层经 cmd_tx 写入。
     let (cmd_tx, cmd_rx) = mpsc::channel::<ActorCmd>(64);
-    tokio::spawn(run_actor(engine, cmd_rx, done_rx, retry_rx));
+    tokio::spawn(run_actor(
+        engine,
+        cmd_rx,
+        done_rx,
+        retry_rx,
+        missing_cleanup_rx,
+    ));
 
     // 本地设备互联（P2P 局域网配对 + mDNS 发现 + 直连传输）。
     // 广播端口 = FLUXDOWN_BIND 的端口；FLUXDOWN_MDNS=off 时不主动广播（仍可手动配对）。
