@@ -43,6 +43,12 @@ class DownloadController extends ChangeNotifier {
   /// 当前队列筛选 ID：null = 不过滤（显示全部），'' = 默认队列，非空 = 指定命名队列
   String? _queueFilter;
 
+  /// 当前设备筛选 ID：null = 全部设备，'' = 本机，非空 = 远程设备 deviceId
+  String? _deviceFilter;
+
+  /// 远程设备任务快照（经 FluxCloud 回流，由 RemoteTaskService.updateRemoteTasks 注入）
+  List<DownloadTask> _remoteTasks = const [];
+
   // 缓存 — 避免 filteredTasks / groupedTasks 每次访问重新计算
   List<DownloadTask>? _cachedFilteredTasks;
   List<TaskGroup>? _cachedGroupedTasks;
@@ -123,6 +129,21 @@ class DownloadController extends ChangeNotifier {
   /// 当活跃任务完成/出错时由 _resumeNextDeferred() 逐个发送到 Rust。
   final List<String> _deferredResumeQueue = [];
 
+  /// 插件钩子活动追踪：taskId → 正在运行的 pluginId 集合（旁路 UI 指示器，
+  /// 不影响任务状态机）。集合非空即在该任务上显示「插件处理中…」。
+  final Map<String, Set<String>> _pluginHookActivity = {};
+
+  /// 插件钩子活动起始时间：taskId → 本轮首个钩子开始时刻（详情面板耗时显示）。
+  final Map<String, DateTime> _pluginHookSince = {};
+
+  /// 插件钩子活动看门狗：taskId → Timer。`running=true` 时设置/重置，
+  /// 超时未收到对应 `running=false`（通知平面 fire-and-forget，事件可能
+  /// 丢失）则清空该任务的活动记录，防止指示器悬挂。
+  final Map<String, Timer> _pluginHookWatchdogs = {};
+
+  /// 看门狗超时 = 钩子墙钟硬顶 1830s + 30s 余量。
+  static const _pluginHookWatchdogTimeout = Duration(seconds: 1860);
+
   StreamSubscription<RustSignalPack<TaskProgress>>? _progressSub;
   StreamSubscription<RustSignalPack<AllTasks>>? _allTasksSub;
   StreamSubscription<RustSignalPack<SegmentProgress>>? _segmentSub;
@@ -135,6 +156,7 @@ class DownloadController extends ChangeNotifier {
   StreamSubscription<RustSignalPack<FileMissingChanged>>? _fileMissingSub;
   StreamSubscription<RustSignalPack<TaskQueueChanged>>? _taskQueueChangedSub;
   StreamSubscription<RustSignalPack<TaskRouteChanged>>? _taskRouteChangedSub;
+  StreamSubscription<RustSignalPack<PluginHookActivityEvent>>? _pluginHookSub;
   StreamSubscription<RustSignalPack<TaskSegmentsUpdated>>? _segmentsUpdatedSub;
   StreamSubscription<RustSignalPack<AllGroups>>? _allGroupsSub;
 
@@ -167,8 +189,13 @@ class DownloadController extends ChangeNotifier {
     _fileMissingSub?.cancel();
     _taskQueueChangedSub?.cancel();
     _taskRouteChangedSub?.cancel();
+    _pluginHookSub?.cancel();
     _segmentsUpdatedSub?.cancel();
     _allGroupsSub?.cancel();
+    for (final timer in _pluginHookWatchdogs.values) {
+      timer.cancel();
+    }
+    _pluginHookWatchdogs.clear();
     super.dispose();
     logInfo(_tag, 'dispose done');
   }
@@ -210,10 +237,32 @@ class DownloadController extends ChangeNotifier {
   /// 当前队列筛选（null = 不过滤，'' = 默认队列，非空 = 指定命名队列）
   String? get queueFilter => _queueFilter;
 
-  /// 按队列 ID 过滤本地任务。
+  /// 当前设备筛选（null = 全部设备；'' = 本机；非空 = 远程设备 deviceId）
+  String? get deviceFilter => _deviceFilter;
+
+  /// 远程设备任务（经 FluxCloud 回流，由 RemoteTaskService 注入）
+  List<DownloadTask> get remoteTasks => _remoteTasks;
+
+  /// 本地引擎任务快照（供 RemoteTaskService 关联下发任务、上报进度）。
+  List<DownloadTask> get localTasks => List.unmodifiable(_tasks);
+
+  /// 设备维度作用域任务集（混排管线最上游）：
+  /// deviceFilter==null → 本地+远程混排；''（本机）→ 本地；远程 deviceId → 该设备远程任务。
+  List<DownloadTask> get _deviceScopedTasks {
+    final f = _deviceFilter;
+    if (f == null) {
+      if (_remoteTasks.isEmpty) return _tasks;
+      return [..._tasks, ..._remoteTasks];
+    }
+    if (f.isEmpty) return _tasks;
+    return _remoteTasks.where((t) => t.deviceId == f).toList();
+  }
+
+  /// 按队列 ID 过滤（叠加在设备作用域之上）
   List<DownloadTask> get _queueFiltered {
-    if (_queueFilter == null) return _tasks;
-    return _tasks.where((t) => t.queueId == _queueFilter).toList();
+    final base = _deviceScopedTasks;
+    if (_queueFilter == null) return base;
+    return base.where((t) => t.queueId == _queueFilter).toList();
   }
 
   /// 队列过滤后的任务列表（公开给侧边栏计数使用）
@@ -515,6 +564,11 @@ class DownloadController extends ChangeNotifier {
   }
 
   /// 指定设备的任务数（用于侧边栏设备区计数）。'' = 本机。
+  int countForDevice(String deviceId) {
+    if (deviceId.isEmpty) return _tasks.length;
+    return _remoteTasks.where((t) => t.deviceId == deviceId).length;
+  }
+
   // ---------------------------------------------------------------------------
   // 管理模式（多选批量操作）
   // ---------------------------------------------------------------------------
@@ -705,21 +759,6 @@ class DownloadController extends ChangeNotifier {
     _rangeAnchorTaskId = null;
     _isManageMode = false;
     _safeNotifyListeners();
-  }
-
-  /// 清空所有本机已完成任务的记录，保留已下载文件。
-  void deleteCompletedTasks() {
-    final ids = _tasks
-        .where((task) => task.status == TaskStatus.completed)
-        .map((task) => task.id)
-        .toList();
-    logInfo(_tag, 'deleteCompletedTasks: ${ids.length} tasks');
-    if (ids.isEmpty) return;
-
-    _checkedTaskIds
-      ..clear()
-      ..addAll(ids);
-    deleteCheckedTasks(deleteFiles: false);
   }
 
   String? get selectedTaskId => _selectedTaskId;
@@ -1167,6 +1206,31 @@ class DownloadController extends ChangeNotifier {
     if (changed) _safeNotifyListeners();
   }
 
+  /// 设置设备筛选。传入相同值则切回「全部设备」。null=全部，''=本机，非空=远程设备。
+  void setDeviceFilter(String? deviceId) {
+    if (_deviceFilter == deviceId) {
+      _deviceFilter = null;
+    } else {
+      _deviceFilter = deviceId;
+    }
+    _safeNotifyListeners();
+  }
+
+  /// 由 RemoteTaskService 注入最新远程任务快照（进度回流驱动 UI 刷新）。
+  void updateRemoteTasks(List<DownloadTask> tasks) {
+    _remoteTasks = tasks;
+    _safeNotifyListeners();
+  }
+
+  /// 设备名册变化时清理失效的设备筛选（筛选的远程设备已被移除 → 回到全部）。
+  void pruneDeviceFilter(Set<String> knownRemoteDeviceIds) {
+    final f = _deviceFilter;
+    if (f != null && f.isNotEmpty && !knownRemoteDeviceIds.contains(f)) {
+      _deviceFilter = null;
+      _safeNotifyListeners();
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Queue CRUD — 发送信号到 Rust
   // ---------------------------------------------------------------------------
@@ -1476,6 +1540,9 @@ class DownloadController extends ChangeNotifier {
     _taskRouteChangedSub = TaskRouteChanged.rustSignalStream.listen(
       _onTaskRouteChanged,
     );
+    _pluginHookSub = PluginHookActivityEvent.rustSignalStream.listen(
+      _onPluginHookActivity,
+    );
     _segmentsUpdatedSub = TaskSegmentsUpdated.rustSignalStream.listen(
       _onTaskSegmentsUpdated,
     );
@@ -1686,6 +1753,53 @@ class DownloadController extends ChangeNotifier {
     _tasks[idx] = task;
     _safeNotifyListeners();
   }
+
+  /// 插件钩子活动指示：`running=true` 加入 `(taskId, pluginId)` 并设/重置
+  /// 看门狗；`running=false` 移除，集合空则整条清理并取消看门狗。纯旁路 UI
+  /// 状态，不驱动 _tasks 状态机。
+  void _onPluginHookActivity(RustSignalPack<PluginHookActivityEvent> pack) {
+    if (_disposed) return;
+    final e = pack.message;
+    if (e.running) {
+      final set = _pluginHookActivity[e.taskId] ??= {};
+      if (set.isEmpty) {
+        // 该任务本轮首个活动钩子：记录起始时间供详情面板显示耗时。
+        _pluginHookSince[e.taskId] = DateTime.now();
+      }
+      set.add(e.pluginId);
+      _pluginHookWatchdogs[e.taskId]?.cancel();
+      _pluginHookWatchdogs[e.taskId] = Timer(_pluginHookWatchdogTimeout, () {
+        logInfo(
+          _tag,
+          'plugin hook watchdog fired: task=${e.taskId} — 清除悬挂的插件处理指示',
+        );
+        _pluginHookActivity.remove(e.taskId);
+        _pluginHookSince.remove(e.taskId);
+        _pluginHookWatchdogs.remove(e.taskId);
+        _safeNotifyListeners();
+      });
+    } else {
+      final activePlugins = _pluginHookActivity[e.taskId];
+      activePlugins?.remove(e.pluginId);
+      if (activePlugins == null || activePlugins.isEmpty) {
+        _pluginHookActivity.remove(e.taskId);
+        _pluginHookSince.remove(e.taskId);
+        _pluginHookWatchdogs.remove(e.taskId)?.cancel();
+      }
+    }
+    _safeNotifyListeners();
+  }
+
+  /// 该任务当前是否有插件钩子正在处理（旁路 UI 指示器，不代表任务状态）。
+  bool isPluginProcessing(String taskId) =>
+      _pluginHookActivity[taskId]?.isNotEmpty ?? false;
+
+  /// 正在处理该任务的插件 identity 集合（快照拷贝；无活动时为空集）。
+  Set<String> pluginProcessingIds(String taskId) =>
+      Set.unmodifiable(_pluginHookActivity[taskId] ?? const <String>{});
+
+  /// 本轮插件处理的起始时间（无活动时为 null），供详情面板显示耗时。
+  DateTime? pluginProcessingSince(String taskId) => _pluginHookSince[taskId];
 
   void _onProgress(RustSignalPack<TaskProgress> pack) {
     if (_disposed) return;
@@ -2088,6 +2202,46 @@ class DownloadController extends ChangeNotifier {
       }
     }
     if (changed) _safeNotifyListeners();
+  }
+
+  /// 待处理的「列表定位」请求：由 [revealTask] 写入、TaskList 在 build 中
+  /// 经 [takePendingRevealTask] 消费一次（消费即清——相比 epoch 记账，
+  /// 天然免疫 TaskList 因 RSS 视图切换重挂载导致的请求丢失/重放）。
+  String? _pendingRevealTaskId;
+
+  /// TaskList 专用：取走并清空待定位任务 id（无请求返回 null）。
+  String? takePendingRevealTask() {
+    final id = _pendingRevealTaskId;
+    _pendingRevealTaskId = null;
+    return id;
+  }
+
+  /// 搜索结果 / RSS 条目流直达任务：逐维放宽筛选（状态页签 → 分类 →
+  /// 队列，能不动就不动）保证任务在当前组合下可见；组成员任务展开所属
+  /// 组与目录；最后选中并挂起定位请求——TaskList 消费请求执行滚动定位
+  /// （「显示已完成」是视图层开关，由 TaskList 侧补齐）。
+  void revealTask(String taskId) {
+    DownloadTask? task;
+    for (final t in _tasks) {
+      if (t.id == taskId) {
+        task = t;
+        break;
+      }
+    }
+    if (task == null) return;
+
+    bool hidden() => !filteredTasks.any((t) => t.id == taskId);
+    if (hidden()) setStatusTab(StatusTab.all);
+    if (hidden()) setCategoryFilter(FileCategory.all); // 同时清掉自定义分类
+    // 队列维度只在分区激活（非 null）时切到任务所属队列——保持「分区
+    // 可见则恒有一个激活项」的侧边栏纪律（见 syncSidebarFilters）。
+    if (hidden() && _queueFilter != null && _queueFilter != task.queueId) {
+      setQueueFilter(task.queueId);
+    }
+    if (task.groupId.isNotEmpty) revealGroupMember(task.groupId, taskId);
+    selectTask(taskId);
+    _pendingRevealTaskId = taskId;
+    _safeNotifyListeners();
   }
 
   /// 按聚合态二选一（design-proto-spec §8 组右键菜单 / §13 Space 键）：

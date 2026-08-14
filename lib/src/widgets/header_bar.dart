@@ -57,6 +57,10 @@ class HeaderBar extends StatefulWidget {
   final DownloadController controller;
   final void Function(SettingsSearchItem item) onNavigateToSettings;
 
+  /// 点击任务类搜索结果：直达任务（放宽筛选 + 滚动定位到视口中央），
+  /// 由 home_page 统一入口 `_revealTask` 承接。
+  final ValueChanged<String> onRevealTask;
+
   // 「显示选项」按钮已移至任务列表表头右缘（task_list.dart），titlebar
   // 不再持有 viewPrefsStore（用户决策：入口跟随列表区）。
 
@@ -65,6 +69,7 @@ class HeaderBar extends StatefulWidget {
     required this.onNewDownload,
     required this.controller,
     required this.onNavigateToSettings,
+    required this.onRevealTask,
   });
 
   @override
@@ -221,7 +226,7 @@ class HeaderBarState extends State<HeaderBar> {
     if (result.groupId != null) {
       widget.controller.selectGroup(result.groupId);
     } else if (result.type == SearchResultType.task && result.taskId != null) {
-      widget.controller.selectTask(result.taskId);
+      widget.onRevealTask(result.taskId!);
     } else if (result.type == SearchResultType.settings &&
         result.settingsItem != null) {
       widget.onNavigateToSettings(result.settingsItem!);
@@ -813,26 +818,11 @@ class _TitlebarToolButtons extends StatelessWidget {
     final themeProvider = FluxDownApp.of(context);
     final showPause = settings?.showTitlebarPauseAll ?? true;
     final showResume = settings?.showTitlebarResumeAll ?? true;
-    final showClearCompleted = settings?.showTitlebarClearCompleted ?? true;
     final showSettings = settings?.showTitlebarSettings ?? true;
     final showTheme = settings?.showTitlebarTheme ?? true;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (showClearCompleted)
-          _ToolButton(
-            icon: LucideIcons.trash2,
-            tooltip: s.clearCompletedTasks,
-            onPressed: controller.deleteCompletedTasks,
-            iconSize: 16,
-            onSecondaryTapUp: settings == null
-                ? null
-                : (d) => _showHideMenu(
-                    context,
-                    d.globalPosition,
-                    () => settings.setShowTitlebarClearCompleted(false),
-                  ),
-          ),
         if (showPause)
           _ToolButton(
             icon: LucideIcons.circlePause,
@@ -913,7 +903,7 @@ class _TitlebarOverlayReservation extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = SettingsProvider.globalInstance;
     if (settings == null) {
-      return SizedBox(width: _windowButtonsWidth + _toolButtonWidth * 5);
+      return SizedBox(width: _windowButtonsWidth + _toolButtonWidth * 4);
     }
     return ListenableBuilder(
       listenable: settings,
@@ -921,7 +911,6 @@ class _TitlebarOverlayReservation extends StatelessWidget {
         final visibleTools = [
           settings.showTitlebarPauseAll,
           settings.showTitlebarResumeAll,
-          settings.showTitlebarClearCompleted,
           settings.showTitlebarSettings,
           settings.showTitlebarTheme,
         ].where((v) => v).length;
