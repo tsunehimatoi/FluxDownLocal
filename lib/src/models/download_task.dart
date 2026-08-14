@@ -7,7 +7,8 @@ import '../i18n/locale_provider.dart';
 /// 任务状态 — 与 Rust 端状态码对应
 /// 0=pending, 1=downloading, 2=paused, 3=completed, 4=error, 5=preparing
 /// resuming 为纯 Dart 端状态，点击继续后立即切换，Rust 返回 status=1 后自动过渡到 downloading
-/// canceled 是保留的纯 Dart 端终态，不对应 Rust 状态码。
+/// canceled 同样是纯 Dart 端状态——只由云端远程任务镜像（RemoteTaskStatus.
+/// canceled）产生，本地下载引擎不会、也不应该产生它，故不出现在上面的状态码表里。
 enum TaskStatus {
   pending,
   downloading,
@@ -35,6 +36,18 @@ enum SeedingStatus {
   inactiveReached,
   // 加在末尾：避免影响任何隐含依赖枚举 index 的对应关系。
   queued,
+}
+
+/// 文件名未确认时的展示占位：用任务 URL 顶替「未知文件」，让用户在
+/// probe / BT 元数据取回前也能分辨任务（Web SPA 早已是 fileName || url，
+/// 此处对齐）。超长 URL（尤其 magnet 带一串 tracker）截断加省略号——
+/// 该值还会流入重命名预填与删除确认文案，不能无限长。
+/// URL 为空时（理论不可达）回退 i18n 占位符。
+String placeholderTaskName(String url) {
+  if (url.isEmpty) return currentS.unknownFile;
+  const max = 64;
+  if (url.length <= max) return url;
+  return '${url.substring(0, max)}…';
 }
 
 /// Convert a Rust seeding status code to the Dart enum.
@@ -186,7 +199,8 @@ enum FileCategory {
   }
 }
 
-// 无 canceled 分支：Rust 侧没有对应状态码。
+// 无 canceled 分支：Rust 侧没有对应状态码，canceled 只由
+// RemoteTaskService._mapStatus 从远程任务镜像直接构造，不经过本函数。
 TaskStatus taskStatusFromInt(int value) {
   return switch (value) {
     0 => TaskStatus.pending,
@@ -421,6 +435,12 @@ class DownloadTask {
   /// 「复制链接 / 分享」应当使用的地址：有真实来源就用它，否则回退 [url]。
   String get shareUrl => originUrl.isNotEmpty ? originUrl : url;
 
+  /// 归属设备标识（'' = 本机；非空 = 远程设备 deviceId）。跨设备任务混排 + 设备筛选用。
+  final String deviceId;
+
+  /// 是否为远程设备上执行的任务（经 FluxCloud 回流的只读视图，非本地引擎任务）。
+  final bool isRemote;
+
   /// Auto 代理模式下引擎选择的链路标签（wire 值如 `direct` / `proxy:failover`；
   /// 空 = 非 Auto 模式，详情面板不显示该行）。
   final String autoRoute;
@@ -474,6 +494,8 @@ class DownloadTask {
     this.originUrl = '',
     this.checksum = '',
     this.proxyUrl = '',
+    this.deviceId = '',
+    this.isRemote = false,
     this.autoRoute = '',
     this.completedAt,
     this.uploadedBytes = 0,
@@ -501,7 +523,7 @@ class DownloadTask {
     return DownloadTask(
       id: info.taskId,
       url: info.url,
-      fileName: hasName ? info.fileName : currentS.unknownFile,
+      fileName: hasName ? info.fileName : placeholderTaskName(info.url),
       saveDir: info.saveDir,
       status: taskStatusFromInt(info.status),
       downloadedBytes: info.downloadedBytes,
@@ -947,27 +969,12 @@ class DownloadTask {
 /// （如 `foo.com.cn` 是注册域，而非误判为 `com.cn`）。仅收录高频后缀，
 /// 非详尽 Public Suffix List——零外联纪律下的内置精简表。
 const Set<String> kTwoLevelPublicSuffixes = {
-  'com.cn',
-  'net.cn',
-  'org.cn',
-  'gov.cn',
-  'edu.cn',
-  'co.uk',
-  'org.uk',
-  'ac.uk',
-  'gov.uk',
-  'com.au',
-  'net.au',
-  'org.au',
-  'co.jp',
-  'ne.jp',
-  'or.jp',
-  'co.kr',
-  'ne.kr',
-  'com.hk',
-  'com.tw',
-  'com.sg',
-  'com.br',
+  'com.cn', 'net.cn', 'org.cn', 'gov.cn', 'edu.cn',
+  'co.uk', 'org.uk', 'ac.uk', 'gov.uk',
+  'com.au', 'net.au', 'org.au',
+  'co.jp', 'ne.jp', 'or.jp',
+  'co.kr', 'ne.kr',
+  'com.hk', 'com.tw', 'com.sg', 'com.br',
 };
 
 /// 从 URL 识别的粗粒度协议 token（与 [DownloadTask.protocolLabel] 语义一致，
