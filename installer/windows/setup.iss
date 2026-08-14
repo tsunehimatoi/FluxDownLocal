@@ -24,6 +24,7 @@ AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
+AppUpdatesURL={#MyAppURL}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
@@ -39,6 +40,10 @@ ArchitecturesInstallIn64BitMode=arm64
 ArchitecturesInstallIn64BitMode=x64compatible
 #endif
 PrivilegesRequired=lowest
+; ACL 受限场景（如安装目录由提权进程创建）允许用户改选管理员安装，
+; 而不是在写文件时直接 access denied 死路。静默安装（自动更新 /SILENT）
+; 不弹此对话框，仍按 lowest 执行。
+PrivilegesRequiredOverridesAllowed=dialog
 CloseApplications=force
 SetupIconFile=..\..\windows\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -89,7 +94,8 @@ Root: HKCU; Subkey: "Software\Classes\FluxDown.TorrentFile\DefaultIcon"; ValueTy
 Root: HKCU; Subkey: "Software\Classes\FluxDown.TorrentFile\shell\open\command"; ValueType: string; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey; Tasks: torrentassoc
 
 [UninstallDelete]
-; 删除 KvStore 落盘文件（窗口状态等本地偏好）。
+; 删除 KvStore 落盘文件（含匿名统计设备 ID / 首装标记 / 窗口状态等本地偏好）。
+; 语义：卸载后重装 = 生成新设备 ID = 统计为新安装；升级/覆盖安装不触发本节，ID 保留。
 ; 路径 = shared_preferences_windows：%APPDATA%\<CompanyName>\<ProductName>（Runner.rc 均为 FluxDown）。
 Type: files; Name: "{userappdata}\FluxDown\FluxDown\shared_preferences.json"
 Type: dirifempty; Name: "{userappdata}\FluxDown\FluxDown"
@@ -114,6 +120,11 @@ begin
   Result := '';
   { Force-kill flux_down.exe as a fallback in case Restart Manager fails }
   Exec('taskkill', '/f /im {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  { Upgrade installs must overwrite the previous uninstaller; a stray
+    read-only attribute on it makes CreateFile fail with access denied.
+    Clear the attribute up-front (no-op when the files do not exist). }
+  Exec('attrib', '-r "' + ExpandConstant('{app}\unins000.exe') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Exec('attrib', '-r "' + ExpandConstant('{app}\unins000.dat') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   { Small delay to ensure file locks are released }
   Sleep(500);
 end;
