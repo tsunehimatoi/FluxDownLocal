@@ -6020,11 +6020,17 @@ class _ApiServiceContentState extends State<_ApiServiceContent> {
     if (!_portFocusNode.hasFocus) _commitPort();
   }
 
+  static int? _parsePort(String text) {
+    final v = int.tryParse(text.trim());
+    if (v == null || v < 1024 || v > 65535) return null;
+    return v;
+  }
+
   /// 端口失焦/提交时校验 1024-65535；非法则回退为当前生效值
   void _commitPort() {
     final sp = widget.settingsProvider;
-    final value = int.tryParse(_portController.text.trim());
-    if (value == null || value < 1024 || value > 65535) {
+    final value = _parsePort(_portController.text);
+    if (value == null) {
       setState(() => _portController.text = sp.localServerPort.toString());
       FluxSonner.of(context).show(
         ShadToast.destructive(
