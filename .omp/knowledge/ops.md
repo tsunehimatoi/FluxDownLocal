@@ -33,6 +33,8 @@ Dart 与 Rust 两端写**同一目录同一文件**，统一格式 `HH:MM:SS.mmm
 
 ### 1. 产物输出规范（`dist/` 目录）
 
+> 💡 **版本命名规则**：采用 `v<UpstreamVersion>-local.<N>`（如 `0.4.6-local.1`），`<UpstreamVersion>` 取自上游基准版本，`-local.<N>` 为本地精简版构建/迭代序号。详见 [`.omp/knowledge/upstream-sync.md` §3.5](upstream-sync.md)。
+
 | 目标端 / 组件 | 构建方式 | 输出文件名 |
 |---|---|---|
 | **Windows 安装程序** | `flutter build windows --release` + Inno Setup (`ISCC.exe`) | `FluxDown-<version>-windows-x64-setup.exe` |
@@ -47,8 +49,12 @@ Dart 与 Rust 两端写**同一目录同一文件**，统一格式 `HH:MM:SS.mmm
 
 ### 2. 标准打包命令
 
-#### Step 1: 准备与代码生成
+#### Step 1: 确定版本基线、准备与代码生成
 ```bash
+# 1. 查明上游基准版本（例如 0.4.6）
+git show upstream/main:pubspec.yaml | Select-String "version:"
+
+# 2. 确保 pubspec.yaml 中已对齐版本号（例如 version: 0.4.6-local.1+1）
 rinf gen
 pwsh -Command "New-Item -ItemType Directory -Path dist -Force | Out-Null"
 ```
@@ -63,8 +69,8 @@ cd ..
 
 # 2. 压缩 Chrome 与 Firefox 包
 pwsh -Command @"
-  Compress-Archive -Path 'fluxDown\.output\chrome-mv3\*' -DestinationPath 'dist\FluxDown-0.1.29-chrome.zip' -Force
-  Compress-Archive -Path 'fluxDown\.output\firefox-mv2\*' -DestinationPath 'dist\FluxDown-0.1.29-firefox.zip' -Force
+  Compress-Archive -Path 'fluxDown\.output\chrome-mv3\*' -DestinationPath 'dist\FluxDown-0.4.6-chrome.zip' -Force
+  Compress-Archive -Path 'fluxDown\.output\firefox-mv2\*' -DestinationPath 'dist\FluxDown-0.4.6-firefox.zip' -Force
 
   # 3. 生成 Edge 专用包（剔除 manifest key 字段）
   `$edgeTemp = Join-Path `$env:TEMP 'fluxdown_edge_build'
@@ -74,7 +80,7 @@ pwsh -Command @"
   `$json = Get-Content `$edgeManifest -Raw | ConvertFrom-Json
   `$json.PSObject.Properties.Remove('key')
   `$json | ConvertTo-Json -Depth 10 | Set-Content `$edgeManifest -Encoding utf8
-  Compress-Archive -Path "`$edgeTemp\*" -DestinationPath 'dist\FluxDown-0.1.29-edge.zip' -Force
+  Compress-Archive -Path "`$edgeTemp\*" -DestinationPath 'dist\FluxDown-0.4.6-edge.zip' -Force
   Remove-Item `$edgeTemp -Recurse -Force
 "@
 ```
@@ -84,17 +90,17 @@ pwsh -Command @"
 cargo build --release -p fluxdown_cli
 pwsh -Command @"
   Copy-Item 'target\release\fluxdown.exe' 'dist\fluxdown.exe' -Force
-  Compress-Archive -Path 'target\release\fluxdown.exe' -DestinationPath 'dist\FluxDown-0.1.44-windows-x64-cli.zip' -Force
+  Compress-Archive -Path 'target\release\fluxdown.exe' -DestinationPath 'dist\FluxDown-0.4.6-local.1-windows-x64-cli.zip' -Force
 "@
 ```
 
 #### Step 4: Windows 桌面端构建与安装包/便携包生成
 ```powershell
 # 运行内置打包脚本构建 Release 并生成 Inno Setup 安装包
-pwsh -File scripts\build_custom_windows.ps1 -Version 0.1.44 -OutputDirectory dist
+pwsh -File scripts\build_custom_windows.ps1 -Version 0.4.6-local.1 -OutputDirectory dist
 
 # 制作绿色免安装便携版 zip
-pwsh -Command "Compress-Archive -Path 'build\windows\x64\runner\Release\*' -DestinationPath 'dist\FluxDown-0.1.44-windows-x64-portable.zip' -Force"
+pwsh -Command "Compress-Archive -Path 'build\windows\x64\runner\Release\*' -DestinationPath 'dist\FluxDown-0.4.6-local.1-windows-x64-portable.zip' -Force"
 ```
 
 #### Step 5: 归档油猴用户脚本与校验

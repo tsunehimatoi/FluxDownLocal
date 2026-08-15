@@ -1,7 +1,7 @@
 param(
   [string]$RepoRoot = (Split-Path -Parent $PSScriptRoot),
   [string]$OutputDirectory = '',
-  [string]$Version = '0.1.44',
+  [string]$Version = '0.4.6-local.1',
   [switch]$SkipBuild
 )
 

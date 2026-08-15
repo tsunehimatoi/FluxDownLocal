@@ -1,6 +1,6 @@
 # FluxDown — AI 工作契约（核心）
 
-本仓库维护的是 **FluxDown 本地精简版**：一个以下载速度、稳定性和协议兼容性为核心的多协议下载器，版本号以 `pubspec.yaml` 为准。产品取舍先读 `.omp/knowledge/streamlined-edition.md`。
+本仓库维护的是 **FluxDown 本地精简版**：一个以下载速度、稳定性和协议兼容性为核心的多协议下载器，版本号采用「基线关联+本地迭代」规范（`v<UpstreamVersion>-local.<N>`，以 `pubspec.yaml` 为准，详见 `.omp/knowledge/upstream-sync.md` §3.5）。产品取舍先读 `.omp/knowledge/streamlined-edition.md`。
 **一套 Rust 下载引擎 `fluxdown_engine` + 多客户端**：Flutter 桌面/移动 App、CLI（`fluxdown`）、精简 WXT 浏览器扩展、Tampermonkey 用户脚本、内置 MCP/REST/aria2 API。FluxDown 官方账号/同步/遥测/反馈/在线更新与应用内 JS 插件产品面均不属于本分支。FFI 框架 [Rinf 8.10](https://rinf.cunarist.org)（bincode 信号）**仅** App（`hub` crate）用到。
 
 ---
@@ -162,7 +162,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水�
 
 - **git 写操作的门槛是「用户授权」**：用户在本会话要求过（含 `/commit`、「提交」「推一下」「发版」）→ 视为已授权，核对前置条件后**直接做完**，不再征询；用户没要求、你自己想顺手做 → 停手先问。授权按动作粒度计（提交 ≠ 推送，打 tag ≠ 发布）。
 - **分支模型**：`main` = 开发分支（超集 / 最新），`stable` = 稳定分支（子集）。日常一律在 `main`；`stable` 只经合并/cherry-pick `main` 前进；hotfix 直进 `stable` 必须**同回合**同步回 `main`。一致性判据 `git log stable --not main` **恒为空**。
-- **tag**：稳定 `vX.Y.Z` 只从 `stable`，预览 `vX.Y.Z-rc.N` 只从 `main`；CI 有分支守卫，打错分支整条流水线失败。推送 `v*` tag **立即触发全平台发布，不可逆**。
+- **tag**：采用 `v<UpstreamVersion>-local.<N>` 规范（发版前先通过 `git show upstream/main:pubspec.yaml` 查明上游基准版本）。稳定 `vX.Y.Z-local.N` 只从 `stable`，预览 `vX.Y.Z-local.N-rc.M` 只从 `main`；CI 有分支守卫，打错分支整条流水线失败。推送 `v*` tag **立即触发全平台发布，不可逆**。
 - 流水线是**组件变更检测**式（`changes` job diff `PREV..TAG` 映射路径→`app`/`extension`/`mobile`/`cli`）；`docs/*`、`*.md` 不触发构建。矩阵细节见 `.omp/knowledge/ops.md`。
 
 ---

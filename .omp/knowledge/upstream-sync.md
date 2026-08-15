@@ -155,19 +155,22 @@ flutter test
 - [ ] 确认 i18n 仅维护 `en` + `zh` 基线对，未破坏社区语言回退逻辑。
 - [ ] 确认多 CDN 本地解析与断点续传能力完好。
 
-### 第六步：合入主干、更新台账与推送
+### 第六步：合入主干、版本号对齐与推送
 ```bash
 # 1. 切回 main 并快速合并
 git checkout main
 git merge --ff-only sync/20260815
 
-# 2. 推送更新到个人 Fork 仓库
+# 2. 对齐上游版本号（参见下文 3.5 节规范）
+# 修改 pubspec.yaml、scripts/build_custom_windows.ps1 等
+
+# 3. 提交版本变更并推送更新到个人 Fork 仓库
 git push origin main
 
-# 3. 删除临时同步分支
+# 4. 删除临时同步分支
 git branch -d sync/20260815
 
-# 4. （可选）若发版，将 stable 分支快进同步并推送
+# 5. （可选）若发版，将 stable 分支快进同步并推送
 git checkout stable
 git merge --ff-only main
 git push origin stable
@@ -175,6 +178,35 @@ git checkout main
 ```
 
 最后，将本次同步的水位线和清单记录到下方的**同步历史台账**中。
+
+---
+
+## 3.5 版本号对齐与命名规范（Version Alignment SOP）
+
+为清晰表达精简版与上游官方版本之间的血缘关系，本仓库采用**「基线关联 + 本地迭代」**版本规范。
+
+### 1. 查询上游最新版本（确定基线）
+同步上游前，通过以下方式查明上游当前基准版本 `<UpstreamVersion>`：
+```bash
+# 方式 A：查询上游 main 分支的 pubspec.yaml（权威事实源）
+git show upstream/main:pubspec.yaml | Select-String "version:"
+
+# 方式 B：查询上游最新发布 Tag
+git fetch upstream --tags
+git describe --tags (git rev-parse upstream/main) --match "v*"
+```
+提取出上游纯数字版本号（例如 `0.4.6`）。
+
+### 2. 精简版版本号命名规则
+- **格式公式**：`<UpstreamVersion>-local.<LocalBuild>`（例如 `0.4.6-local.1`）
+- **`pubspec.yaml`**：`version: <UpstreamVersion>-local.<LocalBuild>+1`（例如 `version: 0.4.6-local.1+1`）
+- **Git Release Tag**：`v<UpstreamVersion>-local.<LocalBuild>`（例如 `v0.4.6-local.1`）
+- **打包安装包与便携包**：`FluxDown-<UpstreamVersion>-local.<LocalBuild>-windows-x64-setup.exe`
+- **浏览器扩展 package.json**：`"version": "<UpstreamVersion>"`，本地构建显示 `version_name: "<UpstreamVersion>-local.<LocalBuild>"`
+
+### 3. 版本号递进准则
+1. **同步上游后**：吸收上游新特性/修复并完成测试后，将 `<UpstreamVersion>` 提升至上游当前版本，本地修补号重置为 `.1`（如 `0.4.6-local.1` -> `0.4.7-local.1`）。
+2. **本地专属修复**：未合并新的上游代码，仅在精简版自身修复 bug 或优化配置时，保持 `<UpstreamVersion>` 不变，递增本地修补号（如 `0.4.6-local.1` -> `0.4.6-local.2`）。
 
 ---
 
