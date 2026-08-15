@@ -9,7 +9,7 @@
 
 > **"Downloads, Supercharged."**（下载，全面加速。）
 
-- **核心价值主张**: Rust 驱动的高速多协议下载，永久免费，零广告，零追踪（仅两条匿名部署遥测，可关），本地优先，无需账号即可全功能使用。
+- **核心价值主张**: Rust 驱动的高速多协议下载，零广告、零账号、零遥测、纯本地优先；精简版边界见 `streamlined-edition.md`。
 - **平台矩阵（已发布）**: Windows / macOS / Linux 桌面 App、Android App、headless Web 服务器（Docker/群晖/QNAP/OpenWrt/Unraid/CasaOS）、CLI（`fluxdown`）、浏览器扩展、用户脚本。iOS 代码存在但无发布 job。
 - **纯本地运行**：不接入 FluxDown 官方账号、配置同步、遥测、更新或 CDN 配置服务。
 
@@ -20,8 +20,9 @@
 | 文件 | 内容 |
 |---|---|
 | `README.md`（本文件） | 架构全图、顶层目录树 |
-| `engine.md` | 状态与数据模型、DB 表与字段语义、6 协议、引擎子系统、插件系统、受管组件 |
-| `hosts-and-api.md` | HTTP API 路由组与鉴权、hub / cli / nmh / updater、headless server env 与路由 |
+| `streamlined-edition.md` | 精简版产品边界、保留/移除清单、联网约束与验收标准 |
+| `engine.md` | 状态与数据模型、DB 表与字段语义、6 协议、引擎子系统、旧插件兼容残留、受管组件 |
+| `hosts-and-api.md` | HTTP API 路由组与鉴权、hub / cli / nmh、已退役 updater 历史、headless server env 与路由 |
 | `clients.md` | Flutter 前端（主题 / widgets / 移动端 / 设置项分类）、扩展、用户脚本、Web SPA |
 | `ops.md` | 日志系统、发布与 CI、设计文档实现状态 |
 | `extension-points.md` | 「要加 X 改哪里」全表 |
@@ -35,7 +36,7 @@
 | Trait | 定义位置 | 方向 | 职责 |
 |---|---|---|---|
 | `EventSink` | `engine/src/events.rs` | 引擎→宿主 | 进度/分段拆分/队列变化/组变化等事件推送 |
-| `HostSelection` | `engine/src/selection.rs` | 引擎→宿主（请求决策） | HLS 画质 / BT 文件 / 插件 variant 选择（tristate：用户选/超时默认/无 selector 短路） |
+| `HostSelection` | `engine/src/selection.rs` | 引擎→宿主（请求决策） | HLS 画质 / BT 文件；插件 variant 仅属待清理兼容残留 |
 | `ApiHost` | `native/api/src/service.rs` | 客户端→引擎（HTTP 契约） | REST/aria2/MCP 的能力面；必需方法 + 可默认降级方法 |
 
 ```mermaid
@@ -52,7 +53,7 @@ flowchart TB
     srv[server: headless<br/>axum + WS + SPA]
   end
   api[fluxdown_api<br/>ApiHost 契约 + HTTP 面]
-  eng[fluxdown_engine<br/>协议/分段/DB/队列/组/插件]
+  eng[fluxdown_engine<br/>协议/分段/DB/队列/组]
   clients --> api
   api --> hub
   api --> srv
@@ -64,9 +65,9 @@ flowchart TB
 
 **要点**：
 - `fluxdown_api` 只依赖 `&dyn ApiHost`，不碰引擎——同一套 HTTP 面（脚本接管 + aria2 JSON-RPC（POST 与 WS）+ MCP + `/api/v1` 管理 + OpenAPI）可服务任意宿主。
-- 两个生产宿主：`hub`（App，actor=`download_actor.rs`）、`server`（headless，actor=`actor.rs`）。两者的 actor **都必须** drain `resolve_rx`（off-actor 插件解析回流）与 `plugin_retry_rx`，否则命中 resolver 的下载会永久挂起。
+- 两个生产宿主：`hub`（App，actor=`download_actor.rs`）、`server`（headless，actor=`actor.rs`）。旧插件兼容代码尚存期间，两者的 actor 仍必须 drain `resolve_rx` 与 `plugin_retry_rx`；最终删除该子系统时成组移除。
 - 客户端捕获有三条并行前端进同一本机 RPC（`:17800/download`）：扩展（webRequest+downloads 全拦截）、用户脚本（页面态 `GM_xmlhttpRequest` 回退）、桌面确认框。
-- **并发模型**: current_thread tokio actor 串行化写；每个下载 spawn 独立 task + CancellationToken；插件 resolve 永不阻塞 actor（off-actor spawn + 通道回流）。
+- **并发模型**: current_thread tokio actor 串行化写；每个下载 spawn 独立 task + CancellationToken；旧插件 resolve 残留在删除前仍走 off-actor 通道。
 
 ---
 
@@ -95,7 +96,7 @@ FluxDown/
 ├── website/            官网（Astro SSR + 内容集文档系统）——见 `clients.md`「官网」
 ├── fluxDown/           WXT 浏览器扩展（Chrome/Firefox MV3）——见 `clients.md`「浏览器扩展与用户脚本」
 ├── userscript/         Tampermonkey 用户脚本（扩展替代）——见 `clients.md`「浏览器扩展与用户脚本」
-├── examples/plugins/   插件示例（.fxplug 源）
+├── examples/plugins/   上游插件示例残留（不属于精简版产品面，待清理）
 ├── packaging/          NAS 包脚本（synology/qnap/openwrt）——见 `hosts-and-api.md`「Headless 服务器」
 ├── promotion/          分发模板（unraid/casaos/awesome-selfhosted/mcp）
 ├── docker/             server.Dockerfile + docker-compose.yml

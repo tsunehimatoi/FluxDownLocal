@@ -1,236 +1,163 @@
-<div align="center">
+# FluxDown 精简版
 
-<img src="assets/logo/fluxdown_logo.png" alt="FluxDown Logo" width="128" />
+FluxDown 精简版是基于 [FluxDown 上游项目](https://github.com/zerx-lab/FluxDown)维护的本地优先多协议下载器。本分支以“下载本身”为中心：保留速度、稳定性、协议、RSS、自动化和浏览器接管，删除 FluxDown 官方云服务、遥测、反馈、在线更新和应用内 JS 插件平台，并逐步清除复杂的资源嗅探/悬浮交互。
 
-# FluxDown
+> 完整的产品取舍、维护红线与发布验收清单见 [精简版产品边界](.omp/knowledge/streamlined-edition.md)。版本号以 [`pubspec.yaml`](pubspec.yaml) 为准，浏览器扩展版本以 [`fluxDown/package.json`](fluxDown/package.json) 为准。
 
-### Downloads, Supercharged.
+## 设计目标
 
-*A blazing fast, multi-protocol download manager — the free & open-source IDM alternative.*
+- **纯粹下载**：功能必须直接服务下载速度、成功率、协议兼容或任务管理。
+- **本地优先**：无需 FluxDown 账号，不上传遥测，不依赖官方云配置。
+- **低干扰**：不使用资源嗅探、页面悬浮球或无必要的二次确认。
+- **可自动化**：保留 aria2 RPC、REST/MCP、RSS 和浏览器接管。
+- **易于维护**：从上游同步下载引擎修复时，不重新带回已移除的云服务和产品入口。
 
-[![Latest Release](https://img.shields.io/github/v/release/zerx-lab/FluxDown?style=flat-square&color=06b6d4&label=release)](https://github.com/zerx-lab/FluxDown/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/zerx-lab/FluxDown/total?style=flat-square&color=22c55e)](https://github.com/zerx-lab/FluxDown/releases)
-[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux%20%7C%20NAS%20%7C%20Android-8b5cf6?style=flat-square)](#installation)
-[![Rust](https://img.shields.io/badge/engine-Rust-f74c00?style=flat-square&logo=rust)](native/engine)
-[![Flutter](https://img.shields.io/badge/UI-Flutter-02569B?style=flat-square&logo=flutter)](lib)
-[![MCP Server](https://glama.ai/mcp/servers/zerx-lab/FluxDown/badges/score.svg)](https://glama.ai/mcp/servers/zerx-lab/FluxDown)
+## 保留的核心功能
 
-[![Awesome Rust](https://img.shields.io/badge/Awesome-Rust-orange?logo=rust&style=flat-square)](https://github.com/rust-unofficial/awesome-rust#utilities)
-[![Awesome Windows](https://img.shields.io/badge/Awesome-Windows-0078D4?style=flat-square)](https://github.com/thechampagne/awesome-windows#utilities)
-[![Awesome Free Apps](https://img.shields.io/badge/Awesome-Free%20Apps-22c55e?style=flat-square)](https://github.com/Axorax/awesome-free-apps#download-managers)
-[![Android FOSS](https://img.shields.io/badge/Android-FOSS-3DDC84?style=flat-square&logo=android&logoColor=white)](https://github.com/offa/android-foss#-downloader--manager)
-[![Open Source Android](https://img.shields.io/badge/Open%20Source-Android%20Apps-3DDC84?style=flat-square&logo=android&logoColor=white)](https://github.com/pcqpcq/open-source-android-apps/blob/master/categories/tools.md)
-[![Portainer](https://img.shields.io/badge/Portainer-Template-13BEF9?style=flat-square&logo=portainer&logoColor=white)](https://portainer-templates.as93.net/fluxdown)
-[![Unraid CA](https://img.shields.io/badge/Unraid-CA-F15A2C?style=flat-square)](https://github.com/selfhosters/unRAID-CA-templates/blob/master/templates/fluxdown.xml)
-[![Chinese Indie Dev](https://img.shields.io/badge/Chinese%20Indie-Dev-ef4444?style=flat-square)](https://github.com/1c7/chinese-independent-developer)
-
-[**Website**](https://fluxdown.zerx.dev) · [**Download**](https://fluxdown.zerx.dev/#download) · [**Changelog**](https://fluxdown.zerx.dev/changelog) · [**FAQ**](https://fluxdown.zerx.dev/faq) · [**Feedback**](https://fluxdown.zerx.dev/feedback)
-
-**English** | [简体中文](README.zh-CN.md)
-
-</div>
-
----
-
-## Highlights
-
-- **Up to 10x faster** — Rust + Tokio engine with IDM-style dynamic segmentation
-- **Multi-protocol** — HTTP/HTTPS, FTP, BitTorrent, eD2K, HLS & DASH streaming
-- **Browser integration** — Chrome / Edge / Firefox extension with a 3-layer interception engine
-- **AI-agent ready** — built-in MCP (Model Context Protocol) server: let Claude, Cursor & other AI clients manage your downloads
-- **Resume anywhere** — full download state persisted in SQLite; survive crashes and reboots
-- **Beautiful UI** — light/dark themes, 13 color schemes, responsive three-pane layout
-- **Clean & private** — free and open source, no ads, no tracking, no account required, local-first
-
-## Features
-
-| Feature | Description |
+| 范围 | 功能 |
 |---|---|
-| **Rust-Powered Engine** | Built on Rust and Tokio with zero-cost abstractions — memory-safe concurrency at maximum throughput |
-| **Smart Segmentation** | Segments split dynamically at runtime; idle threads rescue slow segments, just like IDM — but smarter |
-| **Multi-Protocol** | Dedicated engines for HTTP/HTTPS, FTP, BitTorrent (DHT/UPnP/magnet), eD2K (server + Kad DHT source finding, MD4 verification), HLS (AES-decrypt) and DASH |
-| **Speed Control** | Token-bucket global rate limiting — download in the background without killing your browsing |
-| **Resume Anywhere** | Every byte tracked in SQLite with WAL; power loss never costs you progress |
-| **Browser Integration** | Three-layer download interception, streaming media sniffing, Alt+Click bypass, right-click send |
-| **MCP Server** | Built-in Model Context Protocol endpoint (Streamable HTTP) with 12 tools — AI agents can add, monitor and control downloads |
-| **Beautiful Interface** | shadcn-style widgets, IDM-style segment visualization, named queues, system tray |
-| **Clean & Private** | Zero ads, zero telemetry lock-in, zero accounts — your data never leaves your machine |
+| 协议 | HTTP/HTTPS、FTP、BitTorrent、磁力、eD2K、HLS/DASH |
+| 下载性能 | 动态分段、断点续传、并发与连接控制、代理、限速、本地多 CDN 节点调度 |
+| 任务管理 | 队列、分类、计划下载、失败重试、完成后动作、清空已完成任务 |
+| 自动化 | aria2 兼容 JSON-RPC、REST/MCP、RSS 订阅、用户脚本 |
+| 浏览器 | Chrome/Edge/Firefox 下载接管、右键下载、磁力接管、Native Messaging、下载中任务角标 |
+| 数据可靠性 | SQLite 持久化、崩溃恢复、日志、设置导入导出 |
+| 自建服务 | 用户主动配置的 headless server 或远程下载地址 |
 
-## FluxDown vs. IDM
+多 CDN 在这里指下载引擎本地解析并调度同一资源的多个节点，是速度功能，不是 FluxDown 官方 CDN 云服务，因此保留。
 
-| | FluxDown | IDM |
-|---|:---:|:---:|
-| Price | **Free & open source** | $24.95 + renewals |
-| Open source | Yes (AGPL-3.0) | No |
-| Platforms | Windows / macOS / Linux / NAS / Android | Windows only |
-| BitTorrent & magnet | Yes | No |
-| eD2K / eMule links | Yes | No |
-| HLS / DASH streaming | Yes | Partial |
-| Dynamic segmentation | Yes | Yes |
-| Browser extension | Chrome / Edge / Firefox | Yes |
-| Ads & tracking | **None** | — |
+## 已移除 / 不属于本分支
 
-## Installation
+- FluxDown 官方登录、账号、设备云同步、远程任务云同步和云配置。
+- 遥测、部署统计、设备身份、昵称池及 CDN 数据上报。
+- 内置反馈上传、社区/商店推广和无关外链。
+- 自动检查更新、后台更新器与更新弹窗。
+- 应用内 JS/`.fxplug` 插件市场、安装、启停和设置界面。
+- 浏览器页面悬浮球和页面资源面板。App 悬浮球仍是待删除的上游兼容残留，不应继续扩展。
+- 浏览器 DOM 媒体扫描、MutationObserver、Fetch/XHR 注入、HLS/DASH 资源嗅探与资源预览。
 
-Grab the latest build from [**GitHub Releases**](https://github.com/zerx-lab/FluxDown/releases/latest) or [**fluxdown.zerx.dev**](https://fluxdown.zerx.dev/#download):
+这里的“应用内扩展功能”与“浏览器扩展”不是同一件事：前者已退出产品面，后者是核心下载入口并继续维护。
 
-| Platform | Packages |
-|---|---|
-| **Windows** (x64 / ARM64) | `setup.exe` installer · portable `.zip` |
-| **macOS** (Intel / Apple Silicon) | `.dmg` · portable `.tar.gz` |
-| **Linux** (x64) | `.AppImage` · `.deb` · Arch `.pkg.tar.zst` · portable `.tar.gz` |
-| **Android** (arm64-v8a / armeabi-v7a / x86_64) | per-ABI `.apk` · universal `.apk` |
-| **NAS / Server** (headless, x64 / ARM64) | [Docker](https://ghcr.io/zerx-lab/fluxdown-server) · Synology DSM 6/7 `.spk` · QNAP `.qpkg` · OpenWrt `.ipk` · Unraid CA template · CasaOS / ZimaOS app store |
+## 浏览器扩展
 
-### Browser Extension
+精简版扩展只负责下载接管，不充当媒体嗅探器：
 
-Install the extension so FluxDown takes over browser downloads automatically:
+- 保留浏览器下载事件接管、右键发送、磁力链接接管和 Native Messaging。
+- 角标显示 FluxDown 中真正处于下载状态的任务数量。
+- 保留工具栏状态动画和现有配色。
+- 不扫描网页资源，不修改 Fetch/XHR，不注入资源 UI，不显示悬浮球。
+- 浏览器启动时不得重建历史下载，也不得形成取消后反复重新下载的循环。
 
-[<img src="https://img.shields.io/badge/Chrome-Web%20Store-4285F4?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Chrome Web Store" />](https://chromewebstore.google.com/detail/fluxdown/meleenglfggcmcajknpeeeiobnpfmahc)
-[<img src="https://img.shields.io/badge/Edge-Add--ons-0078D4?style=for-the-badge&logo=microsoftedge&logoColor=white" alt="Edge Add-ons" />](https://microsoftedge.microsoft.com/addons/detail/fluxdown/nglkkjbogjghekbhhcnccnpfedjbdhhd)
-[<img src="https://img.shields.io/badge/Firefox-Add--ons-FF7139?style=for-the-badge&logo=firefoxbrowser&logoColor=white" alt="Firefox Add-ons" />](https://addons.mozilla.org/firefox/addon/fluxdown)
+构建扩展：
 
-## MCP Server (Model Context Protocol)
-
-FluxDown ships a built-in **MCP server** so AI agents (Claude Desktop, Cursor, Cline, …) can manage downloads via the [Model Context Protocol](https://modelcontextprotocol.io). It speaks **Streamable HTTP** (JSON-RPC 2.0 over a single `POST /mcp`) on the local API port — no extra process needed.
-
-- **Endpoint**: `http://127.0.0.1:17800/mcp` (local-only by default)
-- **Auth**: Bearer token (`Authorization: Bearer <token>` or `X-FluxDown-Token`), shared with the management API
-- **Enable**: Settings → API Service → toggle *MCP endpoint* (a token is generated automatically); the headless server enables it by default
-
-### Tools (12)
-
-| Tool | Description |
-|---|---|
-| `download_add` | Create a download task (HTTP/HTTPS, FTP, magnet, BitTorrent) |
-| `download_list` | List tasks with progress/speed/status, optional status filter |
-| `download_get` | Get a single task by ID |
-| `download_pause` / `download_resume` | Pause / resume one task |
-| `download_pause_all` / `download_resume_all` | Pause / resume all tasks |
-| `download_remove` | Remove a task, optionally deleting downloaded files |
-| `queue_list` | List named queues and their configuration |
-| `rss_list` | List RSS subscriptions with their configuration and runtime state |
-| `rss_add` | Subscribe to an RSS feed and start polling it on a schedule |
-| `rss_remove` | Delete an RSS subscription and the items it collected |
-
-### Client configuration
-
-```json
-{
-  "mcpServers": {
-    "fluxdown": {
-      "url": "http://127.0.0.1:17800/mcp",
-      "headers": { "Authorization": "Bearer <your-token>" }
-    }
-  }
-}
+```powershell
+Set-Location fluxDown
+npm ci
+$env:GITHUB_ACTIONS = 'true'
+npm run zip
+npm run zip:firefox
 ```
 
-The MCP layer is implemented in [`native/api/src/mcp.rs`](native/api/src/mcp.rs) on top of the same `ApiHost` trait that powers the REST management API and aria2-compatible JSON-RPC.
+产物位于 `fluxDown/.output/`。Chrome/Edge 解压后通过“加载已解压的扩展”安装；Firefox 本地包是否可永久安装取决于浏览器的签名策略。
 
-## Architecture
+## 无人值守行为
 
-Flutter renders the UI; a zero-FFI Rust engine does the heavy lifting. The two talk through [Rinf](https://rinf.cunarist.org) signals, and the browser extension connects via Native Messaging.
+- 启用“跳过二次选择/免打扰”后，aria2 RPC 和 RSS 创建的磁力/种子任务直接采用默认全选，不再弹 BT 文件选择窗口。
+- RSS 与浏览器接管均属于核心功能，不因精简云服务或应用内插件而删除。
+- 主界面的“清空已完成任务”使用垃圾桶按钮，无确认弹窗，并由“标题栏按钮”设置控制显示。
+
+## 架构
 
 ```mermaid
-flowchart TD
-    EXT["Browser Extension (WXT)"] -->|Native Messaging| NMH["fluxdown_nmh"]
-    NMH -->|Named Pipe / Unix socket| HUB
-    UI["Flutter UI (shadcn_ui)"] <-->|Rinf signals| HUB["hub — FFI adapter"]
+flowchart LR
+    UI["Flutter 桌面/移动 UI"] <-->|Rinf| HUB["hub"]
+    EXT["精简浏览器扩展"] -->|Native Messaging| NMH["fluxdown_nmh"]
+    NMH --> HUB
+    RSS["RSS / aria2 / REST / MCP"] --> API["fluxdown_api"]
+    API --> HUB
+    API --> SERVER["headless server"]
     HUB --> ENGINE["fluxdown_engine"]
-    ENGINE --> HTTP["HTTP/HTTPS"]
-    ENGINE --> FTP["FTP"]
-    ENGINE --> BT["BitTorrent"]
-    ENGINE --> ED2K["eD2K"]
-    ENGINE --> HLS["HLS / DASH"]
+    SERVER --> ENGINE
     ENGINE --> DB[("SQLite")]
+    ENGINE --> NET["HTTP · FTP · BT · eD2K · HLS/DASH"]
 ```
 
-| Layer | Tech | Path |
+| 模块 | 路径 | 说明 |
 |---|---|---|
-| UI | Flutter + shadcn_ui | [`lib/`](lib) |
-| FFI bridge | Rinf (Dart ↔ Rust signals) | [`native/hub/`](native/hub) |
-| Download engine | Rust + Tokio (zero FFI deps) | [`native/engine/`](native/engine) |
-| Browser extension | WXT + TypeScript | [`fluxDown/`](fluxDown) |
-| Website | Astro + React | [`website/`](website) |
+| Flutter 客户端 | [`lib/`](lib) | 桌面/移动界面与本地设置 |
+| Rust 下载引擎 | [`native/engine/`](native/engine) | 协议、分段、队列、持久化 |
+| App FFI 宿主 | [`native/hub/`](native/hub) | Rinf 信号与引擎 actor |
+| HTTP API | [`native/api/`](native/api) | REST、aria2、MCP 契约 |
+| Headless server | [`native/server/`](native/server) | 自建服务端与 Web UI |
+| Native Messaging | [`native/nmh/`](native/nmh) | 浏览器扩展到本机 App 的中继 |
+| 浏览器扩展 | [`fluxDown/`](fluxDown) | WXT 精简下载接管扩展 |
 
-## Building from Source
+仓库中可能仍有未暴露的上游旧插件类型或兼容代码。它们属于待清理技术债，不代表精简版承诺恢复插件产品功能。
 
-**Prerequisites**: [Flutter SDK](https://docs.flutter.dev/get-started/install) · [Rust toolchain](https://www.rust-lang.org/tools/install) · [Rinf CLI](https://rinf.cunarist.org)
+## Windows 构建与安装包
 
-```shell
-# Clone the development branch (main = active development, stable = stable releases)
-git clone -b main https://github.com/zerx-lab/FluxDown.git
-cd FluxDown
+### 环境要求
 
-# Check your environment
-rustc --version
-flutter doctor
+- Flutter SDK（满足 `pubspec.yaml` 中的 Dart/Flutter 要求）
+- Rust stable 工具链
+- Visual Studio 2022 C++ 桌面开发工具
+- CMake/Ninja（通常由 Flutter/Visual Studio 环境提供）
+- [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 
-# Install the Rinf CLI (once)
-cargo install rinf_cli
+### 构建
 
-# Fetch dependencies & generate Dart bindings
+```powershell
 flutter pub get
-rinf gen
+flutter analyze
+cargo check -p hub --lib
 
-# Run in debug mode
-flutter run
-
-# Build a release
-flutter build windows --release   # or: macos / linux
+# 示例版本应与 pubspec.yaml 保持一致。
+powershell -ExecutionPolicy Bypass -File scripts/build_custom_windows.ps1 `
+  -Version 0.1.44 `
+  -OutputDirectory dist
 ```
 
-<details>
-<summary><b>Linux system dependencies</b></summary>
+脚本会构建 Windows Release、排除已退役的 `fluxdown_updater.exe`，然后用 Inno Setup 生成 `setup.exe` 安装包。
 
-```shell
-# Debian/Ubuntu
-sudo apt-get install cmake ninja-build clang pkg-config \
-  libgtk-3-dev libayatana-appindicator3-dev libnotify-dev libsecret-1-dev patchelf zstd
+仅验证安装脚本、复用已有 Release 目录时：
 
-# Arch Linux
-sudo pacman -S cmake ninja clang pkgconf gtk3 libayatana-appindicator libnotify libsecret patchelf zstd
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/build_custom_windows.ps1 `
+  -Version 0.1.44 `
+  -OutputDirectory dist `
+  -SkipBuild
 ```
 
-The NMH relay binary (`fluxdown_nmh`) is built automatically by CMake during `flutter build`. Distribution packages (AppImage / deb / Arch / portable) are produced by [CI](.github/workflows/release.yml) on every tag.
+## 验证建议
 
-</details>
+根据改动范围执行最小充分检查：
 
-<details>
-<summary><b>Running tests</b></summary>
+```powershell
+flutter analyze
+flutter test
+cargo fmt --check
+cargo check -p fluxdown_engine --lib
+cargo check -p hub --lib
+cargo test -p fluxdown_api
 
-```shell
-flutter test                          # Dart tests
-cargo test -p fluxdown_engine        # Rust engine tests
-cargo test -p hub                    # FFI adapter tests
+Set-Location fluxDown
+npm run build
+npm run build:firefox
 ```
 
-</details>
+发布前还应按 [精简版验收清单](.omp/knowledge/streamlined-edition.md#8-验收清单)检查默认外联、更新器、浏览器冷启动和无人值守 BT 行为。
 
-## Contributing & Community
+## 上游同步
 
-- **Bug reports / feature requests** — [GitHub Issues](https://github.com/zerx-lab/FluxDown/issues) or the in-app feedback dialog
-- **QQ Group** — [832143651](https://fluxdown.zerx.dev/qq-group)
+同步上游时优先吸收下载引擎、协议兼容、性能和稳定性修复。合并后必须审计是否重新引入：
 
-Pull requests are welcome! Branch off `main` and target `main` — it is the development branch, while `stable` only tracks stable releases (maintainers advance it from `main`). Before submitting, please make sure:
+- `cloud`、`auth`、`sync`、`analytics`、`feedback`、`update/updater`；
+- 应用内插件市场和 `.fxplug` 产品入口；
+- 浏览器资源嗅探、资源面板、Fetch/XHR 注入和悬浮球；
+- 新的默认外联域名或后台定时请求。
 
-```shell
-cargo fmt --check && cargo clippy -- -D warnings   # Rust
-flutter analyze                                     # Dart
-```
+不要为了减少 Git 冲突而恢复已经删除的非核心功能。
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
+## 许可与致谢
 
-## License
-
-Distributed under the [GNU Affero General Public License v3.0](LICENSE).
-
-<div align="center">
-
-**If FluxDown saves you time, consider giving it a Star — it helps more people discover the project.**
-
-Made by [zerx-lab](https://github.com/zerx-lab)
-
-</div>
+本项目沿用上游的 [GNU Affero General Public License v3.0](LICENSE)。FluxDown 名称、原始架构和大量核心实现来自 [zerx-lab/FluxDown](https://github.com/zerx-lab/FluxDown)；浏览器工具栏图标动画与配色参考 Aria2 Explorer，第三方声明见扩展包内的 `THIRD_PARTY_NOTICES.txt`。

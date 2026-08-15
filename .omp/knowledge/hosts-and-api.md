@@ -14,11 +14,11 @@
 | 探活 | `GET /ping` | 总开关 | 无 |
 | 脚本接管 | `POST /download`、`/download/batch` | `local_server_takeover_enabled`（默认开） | `X-FluxDown-Client` 头 + 可选 token |
 | aria2 兼容 | `POST /jsonrpc`（36 方法）+ `GET /jsonrpc`（WS 升级，`jsonrpc_ws.rs`：RPC + `onDownloadXxx` 通知推送） | `local_server_jsonrpc_enabled`（默认开） | 可选 token（`X-FluxDown-Token` 或 `params[0]="token:xxx"`） |
-| 管理 API | `/api/v1/*`（info、tasks CRUD+pause/continue[all]、queues、resolve/preview、groups CRUD+pause/continue、plugins list/install/install-dev/enabled/settings/uninstall + ignore-plugin-retry、market list/install、**rss** CRUD+refresh+items+items/action+validate） | `local_server_api_enabled`（桌面默认**关**；server 强制开） | **强制** token（Bearer 或 `X-FluxDown-Token`） |
+| 管理 API | `/api/v1/*`（info、tasks CRUD+pause/continue[all]、queues、resolve/preview、groups CRUD+pause/continue、**rss** CRUD+refresh+items+items/action+validate；旧 plugins/market 路由若仍存在仅属待删除兼容面） | `local_server_api_enabled`（桌面默认**关**；server 强制开） | **强制** token（Bearer 或 `X-FluxDown-Token`） |
 | MCP | `POST /mcp`（Streamable HTTP 无状态子集，协议 2025-06-18；12 工具：download_add/list/get/pause/resume/pause_all/resume_all/remove + queue_list + rss_list/rss_add/rss_remove） | `local_server_mcp_enabled`（桌面默认关；server 默认开） | 同管理 API token |
 | OpenAPI | `GET /api/v1/openapi.json`（utoipa 3.1，含漂移守卫测试） | 随管理 API | 无 |
 
-- **`ApiHost` trait**（`service.rs`）：必需方法（list/get/create/delete/pause/continue task、pause/continue all、list_queues、submit_external）+ 可默认降级方法（config/plugins/market/groups/resolve_preview/subscribe_task_events/…）。`UNKNOWN_ENDPOINT_MESSAGE` 区分未注册路由 404 与资源 404。
+- **`ApiHost` trait**（`service.rs`）：必需方法（list/get/create/delete/pause/continue task、pause/continue all、list_queues、submit_external）+ 可默认降级方法（config/groups/resolve_preview/subscribe_task_events/…）。plugins/market 默认方法是待删除兼容债，不得新增调用方。`UNKNOWN_ENDPOINT_MESSAGE` 区分未注册路由 404 与资源 404。
 - **鉴权**（`auth.rs`）：常量时间比较；接管需 `X-FluxDown-Client` 头（利用 CORS 预检挡跨源 fetch）；管理/MCP 强制非空 token（403）。桌面硬绑 127.0.0.1，不返 CORS 头。
 - **语义区分**：脚本接管 → 外部下载流程（弹确认框）；aria2 `addUri`/管理 `POST /tasks` → 直接建任务返真实 ID（自动化预期无弹框）。`takeover.rs` 的 batch 两形态合并为单 `DownloadRequest`（url 换行 join，匹配 Dart 单确认约定）。
 - **aria2 纯映射**（`aria2.rs`）：GID↔task_id 编解码、`METHOD_NAMES`=36、`NOTIFICATION_NAMES`=6、业务错误统一 `code:1`。
@@ -28,7 +28,7 @@
 ## 宿主与客户端 crate
 
 ### `native/hub`（桌面/移动 App，唯一 rinf）
-`lib.rs`（`write_interface!`、current_thread runtime）；`signals/mod.rs`（信号定义——Dart 绑定契约）；`actors/download_actor.rs`（核心事件循环，**必须** drain resolve_rx/plugin_retry_rx）；`api_host.rs`（`HubApiHost`：读直查 Db，写经 command+oneshot 进 actor）；`rinf_sink.rs`（`EventSink`→Dart 信号）；`rinf_selection.rs`（`HostSelection`）；`signal_bridge.rs`（`From` 转换）；`native_messaging.rs`（Windows Named Pipe `\\.\pipe\fluxdown` / Unix socket）；`nmh_registry.rs`（写 NMH 清单）；`file_association.rs`；`protocol_registry.rs`；`reveal_file.rs`；`compat_flags.rs`；`logger.rs`。
+`lib.rs`（`write_interface!`、current_thread runtime）；`signals/mod.rs`（信号定义——Dart 绑定契约）；`actors/download_actor.rs`（核心事件循环；`resolve_rx/plugin_retry_rx` 若仍存在是旧插件兼容接线，删除插件引擎前仍须 drain 防堵塞）；`api_host.rs`（`HubApiHost`：读直查 Db，写经 command+oneshot 进 actor）；`rinf_sink.rs`（`EventSink`→Dart 信号）；`rinf_selection.rs`（`HostSelection`）；`signal_bridge.rs`（`From` 转换）；`native_messaging.rs`（Windows Named Pipe `\\.\pipe\fluxdown` / Unix socket）；`nmh_registry.rs`（写 NMH 清单）；`file_association.rs`；`protocol_registry.rs`；`reveal_file.rs`；`compat_flags.rs`；`logger.rs`。
 
 > ⚠️ **`download_actor.rs` 的主 `tokio::select!` 已占满 tokio 的 64 分支硬上限**（`tokio/src/macros/select.rs` 的 `count_field!` 最后一格是 `_63`），再加一条就是编译错误 `up to 64 branches supported`。
 > **新增任何 Dart 信号 / 定时节拍 / 回流通道都不许往主循环加分支**，一律并进既有的「辅助信号合并转发」：两个后台 `tokio::spawn` 泵（任务组 5 信号 / RSS 8 信号 + 60s 节拍 + 引擎回流）把消息合流进同一条 `aux_tx`，主循环只有一条 `Some(aux) = aux_rx.recv()`。照 `enum AuxSignal { Group(..), Rss(..) }` 加变体即可。
@@ -46,13 +46,13 @@ aria2c 风格。命令：ping/info/add(get)/list(ls)/status(stat)/pause/resume/r
 
 ## Headless 服务器（`native/server`）
 
-组装：Engine（feature plugins+components）+ `EngineEventSink`/`WsHostSelection`（都包 `WsHub`）+ actor + `api_router`（core）`.merge(extra_router).merge(demo_router?).fallback(SPA)`。
+组装：Engine（保留 `components`；`plugins` feature 若仍启用仅为待删除兼容债）+ `EngineEventSink`/`WsHostSelection`（都包 `WsHub`）+ actor + `api_router`（core）`.merge(extra_router).merge(demo_router?).fallback(SPA)`。
 
 **Web UI 编译期内嵌（单二进制）**：`native/server/build.rs` 把 `FLUXDOWN_EMBED_WEBROOT`（缺省仓库 `web/dist`）**整棵目录递归全量** `include_bytes!` 进二进制——不按扩展名/文件名筛选，新增任何文件（含新建子目录、未知类型）下次编译自动进包，删除自动出包（每个文件 + 根目录都登记 `rerun-if-changed`）。运行期由 `web_assets.rs` 托管：内容哈希强 ETag + `If-None-Match` 304；缓存分档**由事实推导而非文件名清单**——`text/html` 一律 no-cache（多入口同样生效），文件名带 Rollup 内容哈希的 immutable 一年（与所在目录无关，`assetsDir` 改名不受影响），其余短缓存 + ETag 回源；未命中回 `index.html` 保 SPA 路由；不支持 Range。`content_type()` 那张扩展名表**只决定响应头、不决定是否嵌入**，表里没有的类型照嵌不误，只按 `application/octet-stream` 兜底并在构建期打 `cargo::warning`。前端改了**必须先 `cd web && bun run build` 再重编服务器**才可见。构建时目录缺失不报错，只生成空表 + warning，运行期给 503 自解释页（API/WS 不受影响）。
 
 - **env**（`config.rs`）：`FLUXDOWN_DATA_DIR`、`FLUXDOWN_DATABASE_URL`、`FLUXDOWN_BIND`、`FLUXDOWN_WEBROOT`、`FLUXDOWN_TOKEN`、`FLUXDOWN_DEMO`/`FLUXDOWN_DEMO_URL`、`FLUXDOWN_LANG`。构建期还有 `FLUXDOWN_EMBED_WEBROOT` 与 `FLUXDOWN_SERVER_VERSION`。
 - **访问密钥（`local_server_token`）是热更新的**：`fluxdown_api::auth::TokenCell` 由核心路由与 `routes_ext` 共享，首次设置 / 设置页改写 / `token/regenerate` 三条路径**立即生效，无需重启**（NAS 用户没有「重启容器」这一步）。密钥策略单一事实源 = `config.rs::validate_access_key`（ASCII 可见字符、8–128 位、字母+数字），Web 端镜像在 `web/src/lib/token-policy.ts`，**改一侧必须同步另一侧**；headless 侧禁止把密钥清空（`PUT /api/v1/config` 写空返回 400）。
-- `actor.rs`：`run_actor` 独占 Engine，**必须** drain resolve_rx/plugin_retry_rx；`ActorCmd` 是 HTTP→引擎写路径（含 `ApplyConfig` live-apply 镜像桌面 SaveConfig）。live-apply 覆盖并发/限速/保存目录/CDN/UA/重试/代理/BT 全组 + **ED2K 订阅与 Kad nodes.dat 后台刷新** + `log_max_size_mb`（直接调 `logger::set_max_total_bytes`）；`ed2k_listen_port`/`ed2k_enable_upnp`/`ed2k_server_list` 由下载时现读，故意无分支。`main.rs` 启动时按 `ed2k_server_sub_startup_plan`（纯函数，缓存版本落后即清缓存）+ nodes.dat 24h 陈旧判定各后台刷新一次，镜像桌面 `download_actor`。
+- `actor.rs`：`run_actor` 独占 Engine；旧 `resolve_rx/plugin_retry_rx` 在彻底删除插件引擎前仍必须 drain。`ActorCmd` 是 HTTP→引擎写路径（含 `ApplyConfig` live-apply 镜像桌面 SaveConfig）。live-apply 覆盖并发/限速/保存目录/CDN/UA/重试/代理/BT 全组 + **ED2K 订阅与 Kad nodes.dat 后台刷新** + `log_max_size_mb`（直接调 `logger::set_max_total_bytes`）；`ed2k_listen_port`/`ed2k_enable_upnp`/`ed2k_server_list` 由下载时现读，故意无分支。`main.rs` 启动时按 `ed2k_server_sub_startup_plan`（纯函数，缓存版本落后即清缓存）+ nodes.dat 24h 陈旧判定各后台刷新一次，镜像桌面 `download_actor`。
 - `ws_hub.rs`：broadcast + `EngineEventSink`（EngineEvent→WS JSON）+ `WsHostSelection`（HLS/BT/variant 经 WS 往返，BT 60s 兜底）+ 维护 prev-state 表映射 aria2 WS 事件源。
 - `routes_ext.rs`：管理 token 保护（config get/put、queues CRUD+启停/定时/排序、task 移队+boost、fs_list、proxy_test、token/regenerate、stats、logs、bt tracker-sub refresh、**ed2k server-sub refresh**（`POST /api/v1/ed2k/server-sub/refresh` → `Ed2kServerSubRefreshResponse`）、**component ffmpeg/ytdlp status/versions/install/uninstall**）；开放（`?token=` query，浏览器不能设头）：`GET /api/v1/ws`、`tasks/{id}/file` 流式取回、logs/export、openapi.json、Scalar `/docs`；**完全无鉴权**：`GET /api/v1/setup/status` + `POST /api/v1/setup`（首次运行向导，仅在密钥未设定时可写，设过即 409）。
 - headless server 不包含 FluxDown 官方遥测或账号服务客户端。

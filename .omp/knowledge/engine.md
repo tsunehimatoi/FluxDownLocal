@@ -1,4 +1,4 @@
-# FluxDown internals · 数据模型 · 下载引擎 · 插件系统
+# FluxDown internals · 数据模型 · 下载引擎 · 旧插件兼容残留
 
 > 本文件是 `FluxDown/AGENTS.md` 的深挖附录：只放**枚举性 / 可从源码复原**的细节，硬不变式与红线在 AGENTS.md。
 > 路径以 `FluxDown/` 为根（cwd=工作区根时前置 `FluxDown/`）。事实层以源码为准，文档给坐标。
@@ -69,7 +69,7 @@
 - **ED2K**：eDonkey2000 纯 leech。源发现 = 服务器 `GETSOURCES`（手动 `ed2k_server_list` + 订阅 `server.met` 缓存）+ Kad DHT 兜底 + UPnP-IGD 争 HighID + LowID 回调中继。逐块 MD4 + hashset 自校验（违规拉黑 peer）；分块 MD4 root hash（PART_SIZE=9.28MB，幻影尾处理）。进程级共享 `Ed2kClient` 持久服务器会话。
 
 ### 引擎子系统（一句话职责）
-- `download_manager.rs`（~7300 行）：任务生命周期、并发、队列（内置 + 命名，启停/每日定时边沿触发/顺序）、任务组、自动重试、协议分发、off-actor 插件解析插桩、速度平滑（EMA α=0.4，1s 采样窗）、WAL checkpoint。
+- `download_manager.rs`（~7300 行）：任务生命周期、并发、队列（内置 + 命名，启停/每日定时边沿触发/顺序）、任务组、自动重试、协议分发、速度平滑（EMA α=0.4，1s 采样窗）、WAL checkpoint；off-actor 插件解析插桩是待删除兼容债。
 - `downloader.rs`：共享原语（`DownloadError` 含 Ed2k/Ed2kIntegrity/Cancelled、`RequestSpec`、文件名/编码工具）。
 - `segment_advisor.rs`：按文件大小 + CPU 推荐连接上限（HTTP 是上限，coordinator 逐步爬升）。
 - `segment_coordinator.rs`（~5300 行）：IDM 式动态分段（按需分配、对半拆最大在传分段救慢速、连接复用、per-domain 连接策略学习——负面上限 + 正面起步提示双观察面、`fallocate` 预分配）。
@@ -87,13 +87,15 @@
   **「无人值守」是 RSS 的核心不变式**——订阅可能半夜抓到 5 集,任何需要用户点一下才能继续的东西都是 bug:① BT 条目建任务时 `NewTaskSpec.unattended_selection=true`,**在启动前**把「已确认全部文件」落库(`save_bt_selected_files(id, &[], true)`)并落 `tasks.unattended=1`(HLS/变体选择也静默),否则 `do_start_task` 会走 `HostSelection` 弹 5 次文件选择框,而用户点「取消」后条目已被标记「已下载」,状态就撒谎了;② `create_task` 内部自发建任务不经过 Dart 的建任务路径,**必须显式补发** `load_and_send_all_tasks()`——`TaskProgress` 信号不带 `queue_id`,不补发的话新任务在 UI 里不属于任何队列;③ 手动「重新下载」对**任何**状态(含已下载)都放行,挡住重下没有任何好处,只会逼用户去别处找种子。
 
 ### 受管组件子系统（`components/`，`components` feature）
-外部二进制 **ffmpeg + yt-dlp** 的按需安装器/解析器（**不打包**，合规边界——用户在设置「组件」页触发下载）。解析优先级 `manual`（config path）→ `managed`（`<data_dir>/bin/`）→ `system` PATH，wire 为 `ComponentSource{Manual,Managed,System,None}`。ffmpeg = BtbN 静态归档（取单文件，macOS 不支持受管）；yt-dlp = 单平台二进制（全平台）。版本列表经官方镜像 `fluxdown.zerx.dev/api/components` + GitHub 兜底。**被两处消费**：插件 `flux.ffmpeg`/`flux.ytdlp` 能力面 + 设置「组件」UI。
+外部二进制 **ffmpeg + yt-dlp** 的按需安装器/解析器（**不打包**，合规边界——用户在设置「组件」页触发下载）。解析优先级 `manual`（config path）→ `managed`（`<data_dir>/bin/`）→ `system` PATH，wire 为 `ComponentSource{Manual,Managed,System,None}`。ffmpeg = BtbN 静态归档（取单文件，macOS 不支持受管）；yt-dlp = 单平台二进制（全平台）。组件本身属于本地下载能力，可保留；版本检查/安装只允许用户主动触发并直连上游或用户配置源。现存 `fluxdown.zerx.dev/api/components` 官方镜像以及插件能力消费均属待清理依赖，不得作为默认路径。
 
 ---
 
-## 插件系统（`native/engine/src/plugin`，`plugins` feature）
+## 旧插件兼容残留（`native/engine/src/plugin`，`plugins` feature；非产品能力）
 
-**可选、可失败的下载任务中间层**，JS 编写（rquickjs 沙箱），声明式设置项（双端自动生成表单）。两个正交能力平面 + 门控工具面：
+> 精简版不提供应用内 JS / `.fxplug` 插件功能。以下内容只记录尚未删除的实现，便于追踪依赖和安全地收口；不得恢复 UI、市场、安装入口或新增调用方。
+
+旧实现是可选、可失败的下载任务中间层，JS 编写（rquickjs 沙箱），声明式设置项。两个正交能力平面 + 门控工具面：
 
 - **Resolver 平面**：`resolve(url,ctx)→{url}|{manifest}|null`。协议判定**之前**惰性执行、**off-actor**（防冻结 actor），命中后 fail-closed（失败进 status=4，绝不把 HTML 当视频存）。惰性 = 每次 start/resume 重跑，天然防直链过期。支持两段式：初段返 manifest 清单 → 引擎裂变为任务组；二段（`ctx.resolverItem`）返直链。`multi:true` 触发新建对话框前置预解析（`begin_resolve_preview` 只读）。
 - **通知平面**：onStart/onDone/onError/onMetaProbed，全 fire-and-forget（失败仅记日志/超时/`try_acquire`，绝不影响任务状态）；仅 onError 内可 `flux.task.requestRetry`。
