@@ -1,7 +1,7 @@
 # FluxDown — AI 工作契约（核心）
 
 本仓库维护的是 **FluxDown 本地精简版**：一个以下载速度、稳定性和协议兼容性为核心的多协议下载器，版本号以 `pubspec.yaml` 为准。产品取舍先读 `.omp/knowledge/streamlined-edition.md`。
-**一套 Rust 下载引擎 `fluxdown_engine` + 多宿主 + 多客户端**：Flutter 桌面/移动 App、headless Web 服务器、CLI、精简 WXT 浏览器扩展、Tampermonkey 用户脚本、内置 MCP/REST/aria2 API、React Web SPA。FluxDown 官方账号/同步/遥测/反馈/在线更新与应用内 JS 插件产品面均不属于本分支。FFI 框架 [Rinf 8.10](https://rinf.cunarist.org)（bincode 信号）**仅** App（`hub` crate）用到。
+**一套 Rust 下载引擎 `fluxdown_engine` + 多客户端**：Flutter 桌面/移动 App、CLI（`fluxdown`）、精简 WXT 浏览器扩展、Tampermonkey 用户脚本、内置 MCP/REST/aria2 API。FluxDown 官方账号/同步/遥测/反馈/在线更新与应用内 JS 插件产品面均不属于本分支。FFI 框架 [Rinf 8.10](https://rinf.cunarist.org)（bincode 信号）**仅** App（`hub` crate）用到。
 
 ---
 
@@ -16,8 +16,8 @@
 | **上游定期同步指导规范（SOP）：人工/AI逐条审查、三类判定、裁剪冲突、台账** | `.omp/knowledge/upstream-sync.md` |
 | 架构全图、顶层目录树（哪个目录管什么） | `.omp/knowledge/README.md` |
 | 状态码 / DB 表与字段语义、6 种协议、引擎子系统（auto_proxy、RSS、segment_coordinator…）、旧插件兼容残留、受管组件 | `.omp/knowledge/engine.md` |
-| HTTP API 路由组与鉴权、hub / cli / nmh、已退役 updater 历史、headless server env 与路由 | `.omp/knowledge/hosts-and-api.md` |
-| Flutter 前端（主题 token、widgets 族、移动端、设置项分类）、扩展、用户脚本、Web SPA | `.omp/knowledge/clients.md` |
+| HTTP API 路由组与鉴权、hub / cli / nmh、已退役 updater 历史 | `.omp/knowledge/hosts-and-api.md` |
+| Flutter 前端（主题 token、widgets 族、移动端、设置项分类）、扩展、用户脚本 | `.omp/knowledge/clients.md` |
 | 日志系统细节、发布流水线矩阵、设计文档实现状态（已实现 vs 仅设计，含命名歧义澄清） | `.omp/knowledge/ops.md` |
 | **「要加 X 改哪里」全表 —— 动手前先查这张** | `.omp/knowledge/extension-points.md` |
 
@@ -42,9 +42,8 @@
 |---|---|
 | 设置键 | `lib/src/models/settings_provider.dart` 的 load switch + 引擎 `db.rs` 的 `config` 表（**所有设置键都在这张表**） |
 | DB schema | `native/engine/src/db.rs`：`SQLITE_SCHEMA` + `POSTGRES_SCHEMA` + `add_column_if_missing` |
-| HTTP 契约 | `native/api/src/types.rs`（wire，camelCase）+ `routes.rs`（路径常量）；规范文件 `website/public/openapi.json` |
+| HTTP 契约 | `native/api/src/types.rs`（wire，camelCase）+ `routes.rs`（路径常量） |
 | Rust↔Dart 信号 | `native/hub/src/signals/mod.rs`；Dart 侧 `lib/src/bindings/` 由 `rinf gen` 生成，**勿手改** |
-| headless env / 访问密钥策略 | `native/server/src/config.rs`（`validate_access_key`） |
 | i18n 基线 | `assets/i18n/{en,zh}.json` + `lib/src/i18n/translations.dart` |
 
 ---
@@ -78,24 +77,20 @@ flutter analyze                       # Dart 静态分析
 # ── 测试（按 crate/过滤，不要 --workspace）──
 cargo nextest run -p fluxdown_engine <filter>   # 引擎单测（协议/分段/DB）
 cargo test -p fluxdown_api            # HTTP API（axum/aria2/MCP/OpenAPI 漂移守卫）
-cargo test -p fluxdown_server         # headless server（WS/actor/扩展路由）
 cargo test -p fluxdown_cli            # CLI（退出码/尺寸解析 doctest）
 flutter test                          # Dart 测试
 PG_TEST_URL=postgres://postgres:pw@localhost/postgres cargo test -p fluxdown_engine -- --ignored pg_smoke
 cargo check -p fluxdown_engine        # 核心引擎检查；不得依赖已退出产品面的 JS 插件功能
 
 # ── 各宿主/客户端运行 ──
-cargo run -p fluxdown_server          # headless 服务器（env 见 .omp/knowledge/hosts-and-api.md）
-cargo run -p fluxdown_cli -- ping     # CLI 探活（子命令同上文件）
+cargo run -p fluxdown_cli -- ping     # CLI 探活
 cargo run -p fluxdown_cli -- add <url> --local   # B 模式：内嵌引擎独立下载
 
-# ── 前端/官网/扩展 ──
-cd web && bun run dev                 # Web SPA localhost:5173（/api 代理到 :17800）；bun run build → web/dist
-cd website && npm run dev             # 官网 Astro localhost:4321
+# ── 扩展 ──
 cd fluxDown && npm run dev            # 精简浏览器扩展；dev:firefox / build / zip
 
 # ── OpenAPI / 图标 / 发布 ──
-cargo run -p fluxdown_api --example gen_openapi > website/public/openapi.json   # 改 API 后重生成
+cargo run -p fluxdown_api --example gen_openapi > openapi.json   # 导出 OpenAPI 规范
 bun scripts/gen_icons.ts              # 改 assets/logo/fluxdown_logo.svg 后全平台图标一键生成
 git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水线（稳定版从 stable，预览 -rc.N 从 main；见 §6）
 ```
@@ -104,7 +99,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水�
 
 ## 3. 架构缝：三个引擎自有 trait
 
-**一个引擎，多个宿主，多个客户端。** 所有下载逻辑集中在 `fluxdown_engine`（`native/engine`，零 FFI/零 rinf），经三个 trait 与外界解耦：
+**一个引擎，多个客户端。** 所有下载逻辑集中在 `fluxdown_engine`（`native/engine`，零 FFI/零 rinf），经三个 trait 与外界解耦：
 
 | Trait | 定义位置 | 方向 | 职责 |
 |---|---|---|---|
@@ -112,7 +107,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水�
 | `HostSelection` | `engine/src/selection.rs` | 引擎→宿主（请求决策） | HLS 画质 / BT 文件选择；插件 variant 仅属待清理兼容残留（tristate：用户选/超时默认/无 selector 短路） |
 | `ApiHost` | `native/api/src/service.rs` | 客户端→引擎（HTTP 契约） | REST/aria2/MCP 的能力面；必需方法 + 可默认降级方法 |
 
-- 两个生产宿主：`hub`（App，actor=`download_actor.rs`）、`server`（headless，actor=`actor.rs`）；`fluxdown_api` 只依赖 `&dyn ApiHost`，同一套 HTTP 面服务任意宿主。CLI 双模式：默认 HTTP 连宿主，`add --local` 内嵌引擎。
+- 生产宿主：`hub`（App，actor=`download_actor.rs`）；`fluxdown_api` 只依赖 `&dyn ApiHost`，服务本机 App 及扩展。CLI 双模式：默认 HTTP 连宿主，`add --local` 内嵌引擎。
 - **并发模型**：current_thread tokio actor 串行化写；每个下载 spawn 独立 task + CancellationToken；旧插件 resolve 残留仍采用 off-actor spawn + 通道回流，删除前不得让它阻塞 actor。
 - 客户端捕获三条并行前端进同一本机 RPC（`:17800/download`）：扩展、用户脚本、桌面确认框。
 
@@ -130,24 +125,23 @@ git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水�
 - `download_actor.rs` 主 `tokio::select!` **已占满 tokio 64 分支硬上限**，再加一条即编译错误。新增任何 Dart 信号 / 定时节拍 / 回流通道**都不许往主循环加分支**——并进既有 `AuxSignal` 合并泵（两个后台 spawn 把消息合流进单条 `aux_tx`，主循环只有一条 `aux_rx.recv()`）。
 - rquickjs（`engine/Cargo.toml`）：禁止叠加 `rust-alloc`/`allocator`（会让 `set_memory_limit` 静默失效）；必带 `parallel`（`AsyncRuntime`/`AsyncContext` 的 Send/Sync 依赖它）。
 - `profile.release` **不**设 `panic="abort"`——`download_manager` 靠 `catch_unwind` 恢复 task panic。
-- **`fluxdown_server` 的 Web UI 是编译期内嵌的**：`native/server/build.rs` 把 `FLUXDOWN_EMBED_WEBROOT`（缺省 `web/dist`）整棵目录递归全量 `include_bytes!` 进二进制（不按扩展名筛选，新增文件/新建子目录下次编译自动进包）。改了前端**必须先 `cd web && bun run build` 再重编服务器**才能看到；产物是单二进制，不再有同级 `web/` 目录，`FLUXDOWN_WEBROOT` 降级为可选的磁盘覆盖。构建时目录缺失只 warning + 运行期 503 提示页，不会让编译失败。
 
 **运行期不变式**
-- 底层插件兼容代码尚未彻底删除期间，两个宿主 actor 仍必须 drain `resolve_rx` 与 `plugin_retry_rx`，避免旧 resolver 路径挂起；最终删除该子系统时应成组移除通道、feature 和契约。
+- 底层插件兼容代码尚未彻底删除期间，宿主 actor 仍必须 drain `resolve_rx` 与 `plugin_retry_rx`，避免旧 resolver 路径挂起；最终删除该子系统时应成组移除通道、feature 和契约。
 - pg 字节列必须 `BIGINT`（`INTEGER` 会在 >2GB 静默截断）；新表要同时进 `SQLITE_SCHEMA` + `POSTGRES_SCHEMA` + 迁移。
 - **每个 console 子进程 spawn 都要包 `proc::no_console_window`**（ffmpeg/ffprobe/yt-dlp/tar/探版），否则 Windows 闪黑窗。
 - **anyhow 错误一律 `{e:#}`**：`{e}` 只输出最外层 context，会整个吞掉根因（BT 的 `dht.json` 撞 Windows 端口排除区间导致全部 BT 任务 status=4，就是这么被吞掉的；DHT 持久化是纯缓存，`SharedBtSession::new` 三级兜底）。
 - **BT 判定只认 `magnet:` 与 `torrent-file://` 哨兵**。HTTP 的 `.torrent` 直链不会走 BT，会被当普通文件下回一个种子文件；要变成真下载必须先抓字节再以 `NewTaskSpec::torrent_file_bytes` 建任务（RSS 就是这么做的）。
-- **「复制链接」类 UI 一律读 `origin_url`，空则回退 `url`**（torrent 任务的 `url` 是哨兵）——Dart `DownloadTask.shareUrl` / web `taskShareUrl()`。
+- **「复制链接」类 UI 一律读 `origin_url`，空则回退 `url`**（torrent 任务的 `url` 是哨兵）——Dart `DownloadTask.shareUrl`。
 - **RSS 是无人值守链路**：任何「需要用户点一下才能继续」的东西都是 bug。建任务即落全选 + `unattended=1`（否则启动时会弹 N 次文件选择框）；`create_task` 内部自发建任务必须补 `load_and_send_all_tasks()`（`TaskProgress` 不带 `queue_id`）；手动「重新下载」对**任何**状态放行。
 - 引擎本地学习类 config 键（`cdn_node_health`、`auto_route_health`、`domain_conn_caps`）**UI 不读写**。
-- App 与 headless server 不接入 FluxDown 官方账号、同步、遥测、反馈、更新或 CDN 配置服务；不要重新引入隐式外联。用户明确配置的自建 server、RSS、tracker、代理、DoH 等不属于官方云。
+- App 不接入 FluxDown 官方账号、同步、遥测、反馈、更新或 CDN 配置服务；不要重新引入隐式外联。用户明确配置的自建 server、RSS、tracker、代理、DoH 等不属于官方云。
 - 本地多 CDN 节点解析/调度是下载性能能力，必须保留；官方 CDN 配置下发与健康上报必须移除。不要因名称相同误删性能热路径。
 - 浏览器扩展必须保留下载接管、右键下载、磁力接管、Native Messaging 与下载中任务角标；不得恢复资源嗅探、DOM 扫描、Fetch/XHR monkey patch、资源面板或页面悬浮球。浏览器冷启动不得重建历史下载。
 - App 悬浮球仍是待删除技术债：不得继续扩展能力或新增平台实现；删除时需同时处理 service、设置键、托盘入口、原生窗口绑定与 i18n，不能只隐藏开关。
 - 关于页保留本地版本、许可与必要信息，但不放官方云、浏览器插件推广、反馈上传或在线更新入口。
 - `aria2`/RSS 等无人值守入口必须把“跳过二次选择”传到 BT 任务；启用后磁力/种子不得再等待文件选择。
-- 命名歧义：`tracker_subscription.rs` / `ed2k/server_subscription.rs` 是 BT tracker 列表 / ED2K `server.met` 订阅，与 `rss/` 的 feed 订阅无关；官网 `api/webhooks/github` 是 GitHub 接收器，与 `engine/src/webhook.rs` 的任务事件推送无关。
+- 命名歧义：`tracker_subscription.rs` / `ed2k/server_subscription.rs` 是 BT tracker 列表 / ED2K `server.met` 订阅，与 `rss/` 的 feed 订阅无关；`engine/src/webhook.rs` 是任务事件推送。
 
 ---
 
@@ -155,16 +149,12 @@ git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水�
 
 | 改这里 | 必须同步 |
 |---|---|
-| `engine/src/rss/filter.rs` | `lib/src/models/rss_filter.dart` + `web/src/lib/rss-filter.ts`（三份逐条对齐；预览与实际下载不一致会直接摧毁功能可信度） |
-| `server/src/config.rs::validate_access_key` | `web/src/lib/token-policy.ts` |
+| `engine/src/rss/filter.rs` | `lib/src/models/rss_filter.dart`（逐条对齐；预览与实际下载不一致会直接摧毁功能可信度） |
 | `engine/src/data_dir.rs` | `lib/src/services/platform_utils.dart` 的 `KNOWN_ITEMS` |
-| `engine/src/webhook.rs` 的 `WebhookEventKind` | Dart `WebhookEvents.all` + TS `WEBHOOK_EVENTS`，**三处 wire 名逐字一致** |
+| `engine/src/webhook.rs` 的 `WebhookEventKind` | Dart `WebhookEvents.all` |
 | `native/nmh/src/main.rs::log_path`（中继自身的诊断日志，在 App 日志目录之外） | `native/hub/src/diagnostics.rs::nmh_log_path`（Doctor 读同一文件的尾部）；改路径必须同步，否则 Doctor 只会报「无日志」 |
 | `hub/src/signals/mod.rs` | `rinf gen` → `download_actor` 的 `AuxSignal` 泵 → Dart 侧 `rustSignalStream` 监听 |
-| `native/api` 契约 | 重跑 `gen_openapi` 覆盖 `website/public/openapi.json` |
-| 任一 UI 文案 | 只补 **en + zh 基线对**：App `assets/i18n/{en,zh}.json` + `translations.dart` getter；`web/src/lib/locales/{en,zh}.json`；`website/src/lib/locales/{en,zh-CN}.json`；`fluxDown/utils/locales/{en,zh-CN}.ts`。社区语言（`ja` 等）由 Weblate 维护，**不碰**（运行时键级回退英文） |
-| web 设置项 / 对话框字段归属 | **基准 = 桌面**：同一功能在两端的分类归属与分区排序必须一致（桌面 `settings_page.dart` 分类 ↔ web 分区组件 GeneralSettings/DownloadSettings/ProxySettings…）。双端并行开发时归属分类要写成一份共享契约，禁止两份各自措辞 |
-| 「一键分类目录」的目录名推导 | `lib/src/models/custom_category.dart` 的 `sanitizeCategoryDirName` / `categoryDirUnder` ↔ `web/src/lib/categories.ts` 同名函数（含分隔符归一）；**且内置分类显示名两端逐字一致**（App `assets/i18n` 的 `categoryVideo/...` ↔ web `type.video/...`），否则同一台机器上桌面与 Web 会各建一套目录（`Document` vs `Documents`） |
+| 任一 UI 文案 | 只补 **en + zh 基线对**：App `assets/i18n/{en,zh}.json` + `translations.dart` getter；扩展 `fluxDown/utils/locales/{en,zh-CN}.ts`。社区语言（`ja` 等）由 Weblate 维护，**不碰**（运行时键级回退英文） |
 
 ---
 
@@ -173,7 +163,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水�
 - **git 写操作的门槛是「用户授权」**：用户在本会话要求过（含 `/commit`、「提交」「推一下」「发版」）→ 视为已授权，核对前置条件后**直接做完**，不再征询；用户没要求、你自己想顺手做 → 停手先问。授权按动作粒度计（提交 ≠ 推送，打 tag ≠ 发布）。
 - **分支模型**：`main` = 开发分支（超集 / 最新），`stable` = 稳定分支（子集）。日常一律在 `main`；`stable` 只经合并/cherry-pick `main` 前进；hotfix 直进 `stable` 必须**同回合**同步回 `main`。一致性判据 `git log stable --not main` **恒为空**。
 - **tag**：稳定 `vX.Y.Z` 只从 `stable`，预览 `vX.Y.Z-rc.N` 只从 `main`；CI 有分支守卫，打错分支整条流水线失败。推送 `v*` tag **立即触发全平台发布，不可逆**。
-- 流水线是**组件变更检测**式（`changes` job diff `PREV..TAG` 映射路径→`app`/`extension`/`server`/`mobile`/`cli`）；`website/*`、`docs/*`、`*.md` 不触发构建。矩阵细节见 `.omp/knowledge/ops.md`。
+- 流水线是**组件变更检测**式（`changes` job diff `PREV..TAG` 映射路径→`app`/`extension`/`mobile`/`cli`）；`docs/*`、`*.md` 不触发构建。矩阵细节见 `.omp/knowledge/ops.md`。
 
 ---
 

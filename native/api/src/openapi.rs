@@ -1,10 +1,9 @@
 //! OpenAPI 3.1 规范 —— 由 handler 注解（`#[utoipa::path]`）与 wire 类型
 //! （`ToSchema`）派生，代码即文档、永不漂移。
 //!
-//! 两个消费口：
+//! 消费口：
 //! - 运行时：`GET /api/v1/openapi.json`（本机 API 服务器，无鉴权）
-//! - 构建期：`cargo run -p fluxdown_api --example gen_openapi` 输出到 stdout，
-//!   重定向到 `website/public/openapi.json` 供官网 Scalar 文档页渲染
+//! - 构建期：`cargo run -p fluxdown_api --example gen_openapi` 输出到 stdout
 
 use utoipa::openapi::security::{ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityScheme};
 use utoipa::{Modify, OpenApi};

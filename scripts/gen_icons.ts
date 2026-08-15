@@ -37,9 +37,6 @@
  *   fluxDown/public/icon/
  *     {16,32,48,128}.png  {16,32,48,128}-disabled.png
  *     fluxdown_logo.png (128×128)  fluxdown_logo.svg (副本)
- *
- *   website/public/
- *     favicon.ico  favicon.svg  logo.png (1024×1024)  logo.svg (副本)
  */
 
 import sharp from "sharp";
@@ -516,41 +513,6 @@ async function main() {
     await saveFile("fluxDown/public/icon/fluxdown_logo.svg", svgContent);
 
     totalCount += extSizes.length * 2 + 2;
-  }
-
-  // ──────────────────────────────────────────
-  // 7. 官网 — favicon + logo
-  // ──────────────────────────────────────────
-  console.log("\n📁 website/public/");
-  {
-    // favicon.ico（多分辨率: 16, 32, 48）
-    const faviconSizes = [16, 32, 48];
-    const faviconFrames: { size: number; data: Buffer }[] = [];
-    for (const size of faviconSizes) {
-      faviconFrames.push({ size, data: await getCachedPng(size) });
-    }
-    const faviconIco = buildIco(faviconFrames);
-    await saveFile("website/public/favicon.ico", faviconIco);
-
-    // favicon.svg — 将 1024px PNG 嵌入 SVG（与现有格式一致）
-    const logo1024 = await getCachedPng(1024);
-    const pngBase64 = logo1024.toString("base64");
-    const faviconSvg = [
-      `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 512 512" width="512" height="512">`,
-      `  <image href="data:image/png;base64,${pngBase64}" width="512" height="512"/>`,
-      `</svg>`,
-      "",
-    ].join("\n");
-    await saveFile("website/public/favicon.svg", faviconSvg);
-
-    // logo.png (1024×1024)
-    await saveFile("website/public/logo.png", logo1024);
-
-    // logo.svg (复制源 SVG)
-    const svgContent = readFileSync(SVG_SRC);
-    await saveFile("website/public/logo.svg", svgContent);
-
-    totalCount += 4;
   }
 
   // ──────────────────────────────────────────

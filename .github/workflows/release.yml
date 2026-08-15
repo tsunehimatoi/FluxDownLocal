@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: write
-  packages: write # 允许推送 Docker 镜像到 ghcr.io（build-server-docker job）
   actions: write # 允许在 release job 末尾删除旧 artifact（避免 500MB 配额耗尽）
 
 # ── SignPath 代码签名（Windows PE，OSS 免费证书）──
@@ -37,7 +36,6 @@ jobs:
     outputs:
       app: ${{ steps.detect.outputs.app }}
       extension: ${{ steps.detect.outputs.extension }}
-      server: ${{ steps.detect.outputs.server }}
       mobile: ${{ steps.detect.outputs.mobile }}
       cli: ${{ steps.detect.outputs.cli }}
     steps:
@@ -74,10 +72,10 @@ jobs:
           # 自动忽略 release 流程创建的 extension-v* / website-v* 组件 tag）
           PREV=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${TAG}^" 2>/dev/null || true)
 
-          APP=false; EXTENSION=false; SERVER=false; MOBILE=false; CLI=false
+          APP=false; EXTENSION=false; MOBILE=false; CLI=false
           if [ -z "$PREV" ]; then
             echo "No previous version tag found — building everything"
-            APP=true; EXTENSION=true; SERVER=true; MOBILE=true; CLI=true
+            APP=true; EXTENSION=true; MOBILE=true; CLI=true
           else
             echo "Diff range: ${PREV}..${TAG}"
             CHANGED=$(git diff --name-only "${PREV}" "${TAG}")
@@ -87,19 +85,14 @@ jobs:
               [ -z "$f" ] && continue
               case "$f" in
                 fluxDown/*)          EXTENSION=true ;;
-                web/*)               SERVER=true ;;
-                native/server/*)     SERVER=true ;;
                 native/cli/*)        CLI=true ;;
-                native/api/*)        SERVER=true; CLI=true ;;
-                native/engine/*)     APP=true; SERVER=true; MOBILE=true; CLI=true ;;
-                docker/*)            SERVER=true ;;
-                packaging/*)         SERVER=true ;;
+                native/api/*)        CLI=true ;;
+                native/engine/*)     APP=true; MOBILE=true; CLI=true ;;
                 android/*)           MOBILE=true ;;
                 lib/src/mobile/*)    MOBILE=true ;;
                 # 其余共享 Dart 代码（models/i18n/theme/bindings…）同时影响桌面端与移动端
                 lib/*)               APP=true; MOBILE=true ;;
                 pubspec.yaml|pubspec.lock) APP=true; MOBILE=true ;;
-                website/*)  ;;
                 docs/*|*.md) ;;
                 *)          APP=true ;;
               esac
@@ -109,11 +102,10 @@ jobs:
           {
             echo "app=$APP"
             echo "extension=$EXTENSION"
-            echo "server=$SERVER"
             echo "mobile=$MOBILE"
             echo "cli=$CLI"
           } >> "$GITHUB_OUTPUT"
-          echo "::notice::Components changed in ${PREV:-<none>}..${TAG}: app=$APP extension=$EXTENSION server=$SERVER mobile=$MOBILE cli=$CLI"
+          echo "::notice::Components changed in ${PREV:-<none>}..${TAG}: app=$APP extension=$EXTENSION mobile=$MOBILE cli=$CLI"
 
   # ── 并行 Job 1: 构建 Windows 安装包（x64 + ARM64）──
   build-windows:
@@ -1231,270 +1223,6 @@ jobs:
           if-no-files-found: error
 
   # ── 并行 Job 5a: 构建服务器 Web SPA（一次构建，供所有平台二进制包复用）──
-  build-web:
-    name: Build Server Web SPA
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.server == 'true'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install web dependencies
-        working-directory: web
-        run: bun install --frozen-lockfile
-
-      - name: Build web SPA
-        working-directory: web
-        run: bun run build
-
-      - name: Upload webroot artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-webroot
-          path: web/dist
-
-  # ── 并行 Job 5b: 构建 Headless 服务器多平台二进制（下载解压即运行）──
-  # 全部使用原生 runner，规避 ring/bundled-sqlite/zstd 等 C 依赖的交叉编译工具链问题：
-  #   linux   → musl 静态链接（零 glibc 依赖，任何发行版/NAS 直接运行）
-  #   windows → MSVC + Schannel（native-tls），无额外运行时依赖
-  #   macos   → arm64 runner 原生编译 + 交叉编译 x64（Apple SDK 双架构开箱即用）
-  # 不提供 x86(32位)：macOS/Win11 已无 32 位，Linux i686 无实际需求；
-  # 如需 armv7（老 NAS/树莓派 32 位）可后续用 cross-rs 追加 matrix 项。
-  # 打包布局：单文件 fluxdown-server(.exe)——Web SPA 由 native/server/build.rs
-  # 在编译期经 FLUXDOWN_EMBED_WEBROOT 嵌进二进制，产物不再附带 web/ 目录。
-  build-server-binaries:
-    name: Build Server (${{ matrix.platform }})
-    needs: [changes, build-web]
-    if: needs.changes.outputs.server == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: linux-x64
-            runner: ubuntu-latest
-            target: x86_64-unknown-linux-musl
-          - platform: linux-arm64
-            runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-musl
-          - platform: windows-x64
-            runner: windows-latest
-            target: x86_64-pc-windows-msvc
-          - platform: windows-arm64
-            runner: windows-11-arm
-            target: aarch64-pc-windows-msvc
-          - platform: macos-x64
-            runner: macos-latest
-            target: x86_64-apple-darwin
-          - platform: macos-arm64
-            runner: macos-latest
-            target: aarch64-apple-darwin
-    runs-on: ${{ matrix.runner }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: version
-        shell: bash
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-
-      # musl-gcc：ring/bundled-sqlite/zstd 等 C 依赖静态编译所需
-      - name: Install musl toolchain (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: server-${{ matrix.platform }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            server-${{ matrix.platform }}-
-
-      # 前端产物必须在 cargo build 之前就位：build.rs 按 FLUXDOWN_EMBED_WEBROOT
-      # 把 web/dist 全量 include_bytes! 进二进制（单文件分发）。
-      - name: Download webroot artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: server-webroot
-          path: webroot
-
-      # FLUXDOWN_SERVER_VERSION：编译期注入 tag 版本号（/ping、stats、OpenAPI 显示）
-      - name: Build server binary
-        env:
-          FLUXDOWN_SERVER_VERSION: ${{ steps.version.outputs.VERSION }}
-          FLUXDOWN_EMBED_WEBROOT: ${{ github.workspace }}/webroot
-        run: cargo build --release --locked -p fluxdown_server --target ${{ matrix.target }}
-
-      - name: Package (tar.gz)
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          PKG="fluxdown-server-${VERSION}-${{ matrix.platform }}"
-          mkdir -p "build/server/${PKG}" release-assets
-          cp "target/${{ matrix.target }}/release/fluxdown-server" "build/server/${PKG}/"
-          tar -C build/server -czf "release-assets/FluxDown-Server-${VERSION}-${{ matrix.platform }}.tar.gz" "${PKG}"
-          ls -la release-assets/
-
-      # ── SignPath 签名: fluxdown-server.exe（打包前签名，zip 内即为已签名二进制）──
-      - name: Collect unsigned server executable
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path build\signing\unsigned | Out-Null
-          Copy-Item "target\${{ matrix.target }}\release\fluxdown-server.exe" "build\signing\unsigned\"
-
-      - name: Upload unsigned server executable
-        if: runner.os == 'Windows'
-        id: upload-unsigned-server
-        uses: actions/upload-artifact@v4
-        with:
-          name: unsigned-server-exe-${{ matrix.platform }}
-          path: build/signing/unsigned/*.exe
-
-      - name: Sign server executable (SignPath)
-        if: runner.os == 'Windows'
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ env.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ env.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ env.SIGNPATH_SIGNING_POLICY }}
-          artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_CONFIG }}
-          github-artifact-id: ${{ steps.upload-unsigned-server.outputs.artifact-id }}
-          wait-for-completion: true
-          wait-for-completion-timeout-in-seconds: 1800
-          output-artifact-directory: build/signing/signed
-
-      - name: Replace server executable with signed version
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          Copy-Item "build\signing\signed\fluxdown-server.exe" "target\${{ matrix.target }}\release\fluxdown-server.exe" -Force
-
-      - name: Package (zip)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $Version = "${{ steps.version.outputs.VERSION }}"
-          $Pkg = "fluxdown-server-$Version-${{ matrix.platform }}"
-          New-Item -ItemType Directory -Force -Path "build\server\$Pkg", "release-assets" | Out-Null
-          Copy-Item "target\${{ matrix.target }}\release\fluxdown-server.exe" "build\server\$Pkg\"
-          Compress-Archive -Path "build\server\$Pkg" -DestinationPath "release-assets\FluxDown-Server-$Version-${{ matrix.platform }}.zip"
-          Get-ChildItem release-assets
-
-      - name: Upload server binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-bin-${{ matrix.platform }}
-          path: release-assets/*
-
-  # ── 并行 Job 5c': NAS/软路由包（OpenWrt ipk + QNAP qpkg + 群晖 spk，复用 linux musl 静态产物）──
-  # ipk 纯脚本手打（packaging/openwrt/build_ipk.sh，无需 OpenWrt SDK）；
-  # qpkg 用官方 QDK qbuild（packaging/qnap/build_qpkg.sh）。
-  # 不跑 InstallToUbuntu.sh（其 apt 依赖列表含 ubuntu 24.04 已不存在的 `python` 包），手动装 QDK。
-  # spk 纯脚本手打（packaging/synology/build_spk.sh，做法同 SynoCommunity spksrc，无需群晖 toolkit）；
-  # DSM 6 / DSM 7 × x86_64 / armv8 共 4 包（DSM 7 强制套件用户运行，DSM 6 root）。
-  # 产物名带 server-bin- 前缀 → release-server 的 download pattern 自动收集附到 Server Release。
-  build-server-nas-packages:
-    name: Build Server (OpenWrt/QNAP/Synology packages)
-    needs: [changes, build-server-binaries]
-    if: needs.changes.outputs.server == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-
-      - name: Download linux server tarballs
-        uses: actions/download-artifact@v4
-        with:
-          pattern: server-bin-linux-*
-          path: tarballs/
-          merge-multiple: true
-
-      - name: Extract server binaries
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          mkdir -p extracted
-          tar -C extracted -xzf "tarballs/FluxDown-Server-${VERSION}-linux-x64.tar.gz"
-          tar -C extracted -xzf "tarballs/FluxDown-Server-${VERSION}-linux-arm64.tar.gz"
-
-      - name: Install QDK and imagemagick
-        run: |
-          sudo apt-get update && sudo apt-get install -y imagemagick build-essential rsync
-          git clone --depth 1 https://github.com/qnap-dev/QDK.git /tmp/QDK
-          make -C /tmp/QDK/src
-          sudo cp /tmp/QDK/src/bin/qpkg_encrypt /bin/
-          sudo cp -rf /tmp/QDK/shared /usr/share/QDK
-          sudo mkdir -p /etc/config
-          sed -e '2d' /tmp/QDK/shared/qdk.conf | sudo tee /etc/config/qdk.conf > /dev/null
-          sudo sed -i '2iQDK_PATH_P=/usr/share' /etc/config/qdk.conf
-          echo "/usr/share/QDK/bin" >> "$GITHUB_PATH"
-
-      - name: Build OpenWrt ipk
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          X64="extracted/fluxdown-server-${VERSION}-linux-x64"
-          A64="extracted/fluxdown-server-${VERSION}-linux-arm64"
-          ./packaging/openwrt/build_ipk.sh server "$VERSION" "$X64/fluxdown-server" x86_64 release-assets
-          ./packaging/openwrt/build_ipk.sh server "$VERSION" "$A64/fluxdown-server" \
-            aarch64_generic,aarch64_cortex-a53,aarch64_cortex-a72,aarch64_cortex-a76 release-assets
-          ./packaging/openwrt/build_ipk.sh luci "$VERSION" release-assets
-
-      - name: Build QNAP qpkg
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          X64="extracted/fluxdown-server-${VERSION}-linux-x64"
-          A64="extracted/fluxdown-server-${VERSION}-linux-arm64"
-          ./packaging/qnap/build_qpkg.sh "$VERSION" x86_64 "$X64/fluxdown-server" \
-            "release-assets/FluxDown-Server-${VERSION}-qnap-x64.qpkg"
-          ./packaging/qnap/build_qpkg.sh "$VERSION" arm_64 "$A64/fluxdown-server" \
-            "release-assets/FluxDown-Server-${VERSION}-qnap-arm64.qpkg"
-
-      - name: Build Synology spk
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          X64="extracted/fluxdown-server-${VERSION}-linux-x64"
-          A64="extracted/fluxdown-server-${VERSION}-linux-arm64"
-          for dsm in dsm7 dsm6; do
-            ./packaging/synology/build_spk.sh "$VERSION" "$dsm" x86_64 "$X64/fluxdown-server" \
-              "release-assets/FluxDown-Server-${VERSION}-synology-${dsm}-x64.spk"
-            ./packaging/synology/build_spk.sh "$VERSION" "$dsm" armv8 "$A64/fluxdown-server" \
-              "release-assets/FluxDown-Server-${VERSION}-synology-${dsm}-arm64.spk"
-          done
-
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: server-bin-nas-packages
-          path: release-assets/*
-
-  # ── 并行 Job: 构建 CLI 二进制（fluxdown，6 平台）──
-  # 与 build-server-binaries 同套 runner/target 策略（全原生 runner 规避 C 依赖交叉编译）：
-  #   linux   → musl 静态链接（零 glibc 依赖）
-  #   windows → MSVC + Schannel（native-tls）
-  #   macos   → 各架构原生 runner 编译
-  # CLI 是单二进制（无 webroot），产物即 fluxdown(.exe)。
   build-cli-binaries:
     name: Build CLI (${{ matrix.platform }})
     needs: changes
@@ -1623,60 +1351,6 @@ jobs:
   # ── 并行 Job 5c: Docker 镜像（linux/amd64 + linux/arm64，推 ghcr.io）──
   # linux 二进制 tarball 已由 build-server-binaries（musl 静态链接）产出，此处只推镜像。
   # Rust 编译在 Dockerfile 内按 TARGETARCH 交叉编译（不走 QEMU）；QEMU 仅用于 arm64 运行时层的 apt。
-  build-server-docker:
-    name: Build Server (Docker)
-    runs-on: ubuntu-latest
-    needs: changes
-    if: needs.changes.outputs.server == 'true'
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up QEMU (arm64 runtime layer)
-        uses: docker/setup-qemu-action@v3
-        with:
-          platforms: arm64
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # 镜像名要求全小写，metadata-action 自动归一化
-      - name: Docker image metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ghcr.io/${{ github.repository_owner }}/fluxdown-server
-          tags: |
-            type=raw,value=${{ steps.version.outputs.VERSION }}
-            type=raw,value=latest
-
-      - name: Build and push Docker image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/server.Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            FLUXDOWN_SERVER_VERSION=${{ steps.version.outputs.VERSION }}
-          cache-from: type=gha,scope=server
-          cache-to: type=gha,scope=server,mode=max
-
-  # ── Release Job 1: 桌面客户端（使用推送的 v* tag，保持 GitHub latest release 语义）──
   release-app:
     name: Release Desktop App
     runs-on: ubuntu-latest
@@ -1788,98 +1462,6 @@ jobs:
           make_latest: "false"
 
   # ── Release Job 3: Headless 服务器（独立 tag server-v*，不抢占 latest）──
-  release-server:
-    name: Release Server
-    runs-on: ubuntu-latest
-    needs: [build-server-docker, build-server-binaries, build-server-nas-packages]
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-
-      - name: Generate release notes
-        uses: ./.github/actions/release-notes
-        with:
-          component: Headless 服务器（含 Web 控制台）
-          fallback-title: Server Release v${{ steps.version.outputs.VERSION }}
-          paths: native/server/** web/** native/engine/** native/api/** docker/** packaging/**
-          claude-token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-
-      # 附加下载方式说明（直接下载二进制 + Docker）
-      - name: Append download & Docker usage to release notes
-        shell: bash
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          cat >> RELEASE_NOTES.md <<EOF
-
-          ---
-
-          ## 📦 直接下载运行（免 Docker）
-
-          | 平台 | 资产 |
-          |---|---|
-          | Windows x64 / ARM64 | \`FluxDown-Server-${VERSION}-windows-{x64,arm64}.zip\` |
-          | macOS Intel / Apple Silicon | \`FluxDown-Server-${VERSION}-macos-{x64,arm64}.tar.gz\` |
-          | Linux x64 / ARM64（musl 静态链接，任意发行版可用） | \`FluxDown-Server-${VERSION}-linux-{x64,arm64}.tar.gz\` |
-          | OpenWrt 软路由（x86_64 / aarch64 各子架构） | \`fluxdown-server_${VERSION}_<arch>.ipk\` + \`luci-app-fluxdown_${VERSION}_all.ipk\` |
-          | QNAP NAS（QTS x86_64 / ARM64） | \`FluxDown-Server-${VERSION}-qnap-{x64,arm64}.qpkg\` |
-          | 群晖 NAS（DSM 7 / DSM 6，x86_64 / ARM64） | \`FluxDown-Server-${VERSION}-synology-{dsm7,dsm6}-{x64,arm64}.spk\` |
-
-          解压后直接运行 \`fluxdown-server\`（Windows 为 \`fluxdown-server.exe\`），浏览器访问 \`http://127.0.0.1:17800\`。
-          **单文件分发**：Web 控制台已编译进二进制，包内只有可执行文件本身，无需附带任何静态资源目录。
-          首次启动请在浏览器里完成「初始化 FluxDown Server」向导设置访问密钥（无人值守部署可用 \`FLUXDOWN_TOKEN\` 预置）。文件校验见 \`SHA256SUMS.txt\`。
-
-          **OpenWrt**：\`opkg install fluxdown-server_*.ipk luci-app-fluxdown_*.ipk\`，LuCI「服务 → FluxDown」页管理，Web 界面在 \`http://路由器IP:17800\`。二进制含完整 Web UI（约 30MB），需 overlay 空间充足的软路由设备。
-          **QNAP**：App Center → 手动安装 \`.qpkg\`（需在设置中允许安装未经验证的应用），装完点应用图标直达 Web 界面。
-          **群晖**：套件中心 → 手动安装 \`.spk\`（需在「设置 → 信任来源」允许任何发行者）。DSM 7.x 装 \`dsm7\` 包（以套件专属用户运行），DSM 6.x 装 \`dsm6\` 包；Intel/AMD 机型选 x64，ARM 机型（rtd1296/rtd1619b 等）选 arm64。装完在套件中心点「打开」直达 Web 界面（端口 17800）。
-
-          ## 🐳 Docker（linux/amd64 · linux/arm64）
-
-          \`\`\`bash
-          docker pull ghcr.io/${{ github.repository_owner }}/fluxdown-server:${VERSION}
-          docker run -d -p 17800:17800 -v fluxdown-data:/data \\
-            ghcr.io/${{ github.repository_owner }}/fluxdown-server:${VERSION}
-          \`\`\`
-
-          Compose 部署见仓库 \`docker/docker-compose.yml\`。首次打开 Web 界面时按向导设置访问密钥，或用 \`-e FLUXDOWN_TOKEN=...\` 预置。
-          EOF
-
-      - name: Download server artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: server-bin-*
-          path: release-assets/
-          merge-multiple: true
-
-      - name: Generate SHA256 checksums
-        working-directory: release-assets
-        run: sha256sum * > SHA256SUMS.txt
-
-      - name: List release assets
-        run: ls -la release-assets/
-
-      # make_latest=false：避免组件 release 成为 GitHub /releases/latest，
-      # 否则会打破客户端自动更新和官网下载页的最新版本判断
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: server-v${{ steps.version.outputs.VERSION }}
-          name: FluxDown Server v${{ steps.version.outputs.VERSION }}
-          files: release-assets/*
-          body_path: RELEASE_NOTES.md
-          generate_release_notes: false
-          draft: false
-          make_latest: "false"
-          prerelease: ${{ contains(github.ref_name, '-') }}
-
-  # ── Release Job: CLI（独立 tag cli-v*，不抢占 latest）──
   release-cli:
     name: Release CLI
     runs-on: ubuntu-latest
@@ -2027,7 +1609,7 @@ jobs:
   cleanup-artifacts:
     name: Cleanup CI Artifacts
     runs-on: ubuntu-latest
-    needs: [release-app, release-extension, release-server, release-mobile, release-cli]
+    needs: [release-app, release-extension, release-mobile, release-cli]
     if: ${{ always() && !cancelled() }}
 
     steps:
@@ -2088,7 +1670,7 @@ jobs:
   notify-mirror:
     name: Notify Download Mirror
     runs-on: ubuntu-latest
-    needs: [release-app, release-extension, release-server, release-mobile, release-cli]
+    needs: [release-app, release-extension, release-mobile, release-cli]
     if: ${{ always() && !cancelled() && contains(needs.*.result, 'success') }}
 
     steps:

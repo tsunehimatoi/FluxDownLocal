@@ -93,18 +93,17 @@ void main() {
     });
   });
 
-  // 内置分类显示名同时是「一键分类目录」的目录名，两端不一致就会在同一台机器上
-  // 各建一套目录（Document vs Documents）。见 AGENTS.md §5 镜像契约。
-  group('内置分类显示名：App 与 Web 逐字一致', () {
-    const pairs = {
-      'categoryVideo': 'type.video',
-      'categoryAudio': 'type.audio',
-      'categoryDocument': 'type.document',
-      'categoryImage': 'type.image',
-      'categoryProgram': 'type.program',
-      'categoryArchive': 'type.archive',
-      'categoryOther': 'type.other',
-    };
+  // 内置分类显示名同时是「一键分类目录」的目录名，保证全部基线语言均定义了完整分类键。
+  group('内置分类显示名：基线语言键存在且非空', () {
+    const keys = [
+      'categoryVideo',
+      'categoryAudio',
+      'categoryDocument',
+      'categoryImage',
+      'categoryProgram',
+      'categoryArchive',
+      'categoryOther',
+    ];
 
     Map<String, dynamic> load(String path) =>
         jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>;
@@ -112,13 +111,16 @@ void main() {
     for (final locale in ['en', 'zh']) {
       test(locale, () {
         final app = load('assets/i18n/$locale.json');
-        final web = load('web/src/lib/locales/$locale.json');
-        for (final entry in pairs.entries) {
+        for (final key in keys) {
           expect(
-            web[entry.value],
-            app[entry.key],
-            reason:
-                '$locale: web `${entry.value}` 必须与 App `${entry.key}` 完全相同',
+            app[key],
+            isNotNull,
+            reason: '$locale: App 必须包含分类键 `$key`',
+          );
+          expect(
+            (app[key] as String).isNotEmpty,
+            isTrue,
+            reason: '$locale: App 分类键 `$key` 不能为空',
           );
         }
       });

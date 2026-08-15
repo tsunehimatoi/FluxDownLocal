@@ -69,31 +69,9 @@ fluxDown/.output/
 fluxDown/.wxt/
 fluxDown/dist/
 
-# Vercel
-website/.vercel/
-
-# Sisyphus
-.sisyphus/
-
-# Memory debug output
-.mem_debug/
-/videos
-
-# Arch package build output
-/arch_pkg/
-
-# Claude Code / claude-flow
-.claude/
-.claude-flow/
-.swarm/
-.mcp.json
-.agents/
-skills-lock.json
-
 # Test files
 test/batch_delete_scale_test.dart
 test/resume_all_test.dart
-website/fluxdown-website-latest.tar
 /docs/
 
 # ── 敏感信息（开源清理，严禁入库）──
@@ -112,7 +90,6 @@ fluxDown/stats.html
 android/local.properties
 **/flutter/ephemeral/
 **/Flutter/ephemeral/
-website/.vscode/launch.json
 design/
 .promo/
 assets/screenshot/
@@ -123,4 +100,3 @@ assets/screenshot/
 
 # Git worktrees
 .worktrees/
-website-v2/

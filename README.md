@@ -14,6 +14,7 @@
 ## 修改内容说明
 
 ### 1. 功能移除与精简
+- **服务端与官网**：移除独立 Headless Web 服务端、Docker 镜像、NAS 软件包、Astro 官网与相关运营分发配置。
 - **云端与账号体系**：移除官方登录、注册、设备同步、远程任务同步及官方云端配置分发。
 - **数据遥测与上报**：移除下载统计上报、部署追踪、设备身份及 CDN 健康状态上报。
 - **后台更新器**：移除常驻的后台在线更新组件（`fluxdown_updater.exe`）及自动更新检查。
@@ -35,7 +36,7 @@
 - **下载性能**：动态分段、断点续传、连接数控制、智能代理、速度限制、本地多 CDN 节点调度。
 - **任务管理**：列表多选与框选、文件复制到系统剪贴板、分类目录、失效任务清理与重下。
 - **接口与自动化**：兼容 aria2 JSON-RPC、REST / MCP API、RSS 订阅自动下载。
-- **客户端与形态**：Flutter 桌面/移动端、内置 Web UI 的 Headless 独立服务端、CLI 工具。
+- **客户端与形态**：Flutter 桌面/移动端、CLI 工具（`fluxdown`）、精简浏览器扩展与 Tampermonkey 用户脚本。
 
 ---
 
@@ -58,15 +59,9 @@ powershell -ExecutionPolicy Bypass -File scripts/build_custom_windows.ps1 `
   -OutputDirectory dist
 ```
 
-### 构建 Headless 服务端（内嵌 Web UI）
+### 构建 CLI 工具
 ```powershell
-# 1. 构建前端产物
-cd web
-bun run build
-
-# 2. 构建服务端单二进制（前端静态资源内嵌于二进制中）
-cd ..
-cargo build --release -p fluxdown_server
+cargo build --release -p fluxdown_cli
 ```
 
 ---
