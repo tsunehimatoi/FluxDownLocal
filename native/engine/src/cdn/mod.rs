@@ -425,12 +425,12 @@ mod tests {
 
     #[tokio::test]
     async fn probe_alive_filters_dead_candidates() {
-        // 活端口：本地 listener；死端口：TEST-NET-1 保留地址（不可路由，
-        // 依赖 2s 超时剔除）。
+        // 活端口：本地 127.0.0.1 listener；死 IP：127.0.0.2（回环但无 listener，
+        // 避开 TUN 驱动对非回环公网段的全局拦截，立即拒绝连接）。
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let alive_ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        let dead_ip = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
+        let dead_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
         let survivors = probe_alive(vec![dead_ip, alive_ip], port).await;
         assert_eq!(survivors, vec![alive_ip]);
     }
