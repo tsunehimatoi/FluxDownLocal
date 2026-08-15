@@ -2,6 +2,8 @@
 
 本项目是基于 [FluxDown (zerx-lab/FluxDown)](https://github.com/zerx-lab/FluxDown) 维护的个人定制与本地精简分支。主要用于满足本地优先的下载需求，去除了云端与运营相关组件，并针对个人使用习惯（如类似 Motrix 的已完成任务清理体验）进行了少量微调。
 
+本fork会定期同步上游，并构建，但是不做保证
+
 > [!IMPORTANT]
 > **致谢与声明**  
 > FluxDown 及其主要工作由原项目作者和贡献者完成。若你喜欢这个项目，请优先考虑 Star、贡献或赞助原始 [FluxDown 项目](https://github.com/zerx-lab/FluxDown)。  

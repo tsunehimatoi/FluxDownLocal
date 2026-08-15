@@ -13,6 +13,7 @@
 | 要查什么 | 读哪个 |
 |---|---|
 | **精简版产品边界：保留/移除项、隐私、浏览器扩展和上游同步准则** | `.omp/knowledge/streamlined-edition.md` |
+| **上游定期同步指导规范（SOP）：人工/AI逐条审查、三类判定、裁剪冲突、台账** | `.omp/knowledge/upstream-sync.md` |
 | 架构全图、顶层目录树（哪个目录管什么） | `.omp/knowledge/README.md` |
 | 状态码 / DB 表与字段语义、6 种协议、引擎子系统（auto_proxy、RSS、segment_coordinator…）、旧插件兼容残留、受管组件 | `.omp/knowledge/engine.md` |
 | HTTP API 路由组与鉴权、hub / cli / nmh、已退役 updater 历史、headless server env 与路由 | `.omp/knowledge/hosts-and-api.md` |
