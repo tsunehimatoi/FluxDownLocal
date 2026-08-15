@@ -1,4 +1,4 @@
-// 关于：版本信息 + 更新渠道 + 更新检测 + 退出登录。
+// 关于：本地版本信息、日志与服务器会话。
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Download } from 'lucide-react'
@@ -7,7 +7,6 @@ import { clearCredentials } from '../../lib/auth'
 import { fmtBytes } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import type { ConfigMap } from '../../lib/types'
-import { useUpdateCheck } from '../../lib/update'
 import { disconnectWs } from '../../lib/ws'
 import { CopyButton } from '../CopyButton'
 import { SetRow, SetSelect } from './controls'
@@ -29,8 +28,6 @@ export function AboutSettings({
   const logDir = logs?.dir ?? ''
   const fileCount = logs?.files.length ?? 0
   const totalSize = logs?.files.reduce((sum, f) => sum + f.size, 0) ?? 0
-  const update = useUpdateCheck()
-  const channel = config?.web_update_channel === 'frontier' ? 'frontier' : 'stable'
   const logMaxSizeMb = Number(config?.log_max_size_mb ?? '10') || 10
 
   function logout() {
@@ -47,28 +44,6 @@ export function AboutSettings({
         <SetRow title={t('set.about.version')}>
           <span className="set-value">{isLoading ? t('common.loading') : info ? `${info.name} ${info.version}` : '—'}</span>
         </SetRow>
-        <SetRow title={t('set.about.channel')} desc={t('set.about.channelDesc')}>
-          <SetSelect
-            value={channel}
-            onValueChange={(v) => mutate({ web_update_channel: v })}
-            options={[
-              { value: 'stable', label: t('set.about.channelStable') },
-              { value: 'frontier', label: t('set.about.channelFrontier') },
-            ]}
-            width={160}
-          />
-        </SetRow>
-        {update.hasUpdate && update.releaseUrl ? (
-          <SetRow title={t('set.about.newVersion', { version: `v${update.latest}` })}>
-            <a className="btn primary sm" href={update.releaseUrl} target="_blank" rel="noreferrer">
-              {t('set.about.getUpdate')}
-            </a>
-          </SetRow>
-        ) : update.latest && update.current ? (
-          <SetRow title={t('set.about.upToDate')}>
-            <span className="set-value">v{update.latest}</span>
-          </SetRow>
-        ) : null}
       </div>
       <div className="set-group">
         <SetRow title={t('set.about.logDir')} desc={t('set.about.logDirDesc')}>
@@ -108,7 +83,7 @@ export function AboutSettings({
           />
         </SetRow>
       </div>
-      {/* 退出登录卡与页尾语同段：宽屏分列时页尾语跟在卡片下面，不会孤零零悬在空白里。 */}
+      {/* 退出服务器会话，不涉及 FluxDown 官方云。 */}
       <section className="set-section">
         <div className="set-group">
           <SetRow title={t('set.about.logout')} desc={t('set.about.logoutDesc')}>
@@ -117,9 +92,6 @@ export function AboutSettings({
             </button>
           </SetRow>
         </div>
-        <p className="set-desc" style={{ marginTop: 14 }}>
-          {t('set.about.tagline')}
-        </p>
       </section>
     </>
   )

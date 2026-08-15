@@ -22,9 +22,6 @@
 //!   `aria2.onDownloadXxx` 通知帧。
 
 use std::collections::HashMap;
-#[cfg(hub_plugins)]
-use std::path::Path;
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -43,14 +40,10 @@ use fluxdown_api::types::{
     LinkPairConfirmOutcome, LinkPairConfirmRequest, LinkPairHelloRequest, LinkPairHelloResponse,
     LinkPingInfo, LinkTaskRequest,
 };
-#[cfg(hub_plugins)]
-use fluxdown_api::types::{MarketEntryDto, PluginDto};
 use fluxdown_engine::db::Db;
 use fluxdown_engine::download_manager::{CreateGroupSpec, GroupItemSpec, ResolvePreviewOutcome};
 #[cfg(hub_link)]
 use fluxdown_engine::link::{DiscoveredPeer, DiscoveryKind, LinkError, WireHello};
-#[cfg(hub_plugins)]
-use fluxdown_engine::plugin::{MarketClient, PluginManager};
 use tokio::sync::{broadcast, mpsc, oneshot};
 
 /// 任务实时速率表：`task_id → LiveSpeed`。写端见 [`crate::rinf_sink::RinfEventSink`]；
@@ -78,6 +71,9 @@ pub enum ApiCommand {
     /// `req` 装箱：`CreateTaskRequest` 远大于其余变体（clippy::large_enum_variant）。
     CreateTask {
         req: Box<CreateTaskRequest>,
+        /// 是否跳过 BT/HLS 等二次选择。由宿主实时读取
+        /// `silent_skip_selection`，确保 aria2 RPC 与浏览器接管行为一致。
+        unattended: bool,
         ack: oneshot::Sender<Option<String>>,
     },
     PauseTask {
@@ -192,14 +188,6 @@ pub struct HubApiHost {
     /// 任务生命周期事件广播源,与注入 `RinfEventSink` 的是同一个 `Sender`;
     /// `subscribe_task_events()` 经它开出新的 `Receiver`。
     task_events_tx: broadcast::Sender<TaskEvent>,
-    #[cfg(hub_plugins)]
-    /// 插件管理器,与 `download_actor::run` 内本循环持有的是同一个 `Arc`
-    /// （见插件系统契约 hub 节 5）。`None` 理论上不应发生
-    /// （`Engine::new` 恒注入），仅作防御性兜底。
-    plugin_manager: Option<Arc<PluginManager>>,
-    /// 数据目录（与 `Engine::data_dir` 同源），供组件存在性探测
-    /// （`plugin::dependencies::missing_components`）解析托管组件路径。
-    data_dir: PathBuf,
     /// 本地设备互联管理器（桌面 `hub_link`；`None` = mDNS 关闭）。
     #[cfg(hub_link)]
     link: Option<Arc<fluxdown_engine::link::LinkManager>>,
@@ -217,8 +205,6 @@ impl HubApiHost {
         ext_tx: mpsc::Sender<Vec<DownloadRequest>>,
         live_speeds: LiveSpeedMap,
         task_events_tx: broadcast::Sender<TaskEvent>,
-        #[cfg(hub_plugins)] plugin_manager: Option<Arc<PluginManager>>,
-        data_dir: PathBuf,
         #[cfg(hub_link)] link: Option<Arc<fluxdown_engine::link::LinkManager>>,
     ) -> Self {
         Self {
@@ -227,9 +213,6 @@ impl HubApiHost {
             ext_tx,
             live_speeds,
             task_events_tx,
-            #[cfg(hub_plugins)]
-            plugin_manager,
-            data_dir,
             #[cfg(hub_link)]
             link,
         }
@@ -265,17 +248,6 @@ impl HubApiHost {
             Err(e) => Err(ApiError::Internal(e.to_string())),
         }
     }
-
-    #[cfg(hub_plugins)]
-    /// 构造市场客户端。`HubApiHost` 不持有 `Engine`，只持有 `Db` + 插件管理器
-    /// `Arc`——直接复刻 `DownloadManager::market_client()` 的逻辑（读市场源
-    /// 配置 + 组装 [`MarketClient`]），语义一致。
-    async fn market_client(&self) -> Result<MarketClient, ApiError> {
-        let pm = self.plugin_manager.clone().ok_or(ApiError::Unavailable)?;
-        let all = self.db.get_all_config().await.unwrap_or_default();
-        let sources = MarketClient::source_config(&all);
-        Ok(MarketClient::new(pm, self.db.clone(), sources))
-    }
 }
 
 #[async_trait]
@@ -297,8 +269,17 @@ impl ApiHost for HubApiHost {
     }
 
     async fn create_task(&self, req: CreateTaskRequest) -> Result<String, ApiError> {
+        let unattended = self
+            .db
+            .get_config("silent_skip_selection")
+            .await
+            .ok()
+            .flatten()
+            .map(|value| value == "true")
+            .unwrap_or(false);
         self.send_cmd(|ack| ApiCommand::CreateTask {
             req: Box::new(req),
+            unattended,
             ack,
         })
         .await?
@@ -384,106 +365,6 @@ impl ApiHost for HubApiHost {
 
     fn subscribe_task_events(&self) -> Option<broadcast::Receiver<TaskEvent>> {
         Some(self.task_events_tx.subscribe())
-    }
-
-    #[cfg(hub_plugins)]
-    async fn list_plugins(&self) -> Result<Vec<PluginDto>, ApiError> {
-        let Some(pm) = &self.plugin_manager else {
-            return Ok(Vec::new());
-        };
-        Ok(pm.list().await.into_iter().map(PluginDto::from).collect())
-    }
-
-    #[cfg(hub_plugins)]
-    async fn set_plugin_enabled(&self, identity: &str, enabled: bool) -> Result<(), ApiError> {
-        let pm = self.plugin_manager.as_ref().ok_or(ApiError::Unavailable)?;
-        pm.set_enabled(identity, enabled)
-            .await
-            .map_err(|e| ApiError::Internal(e.to_string()))
-    }
-
-    #[cfg(hub_plugins)]
-    async fn uninstall_plugin(&self, identity: &str) -> Result<(), ApiError> {
-        let pm = self.plugin_manager.as_ref().ok_or(ApiError::Unavailable)?;
-        pm.uninstall(identity)
-            .await
-            .map_err(|e| ApiError::Internal(e.to_string()))
-    }
-
-    #[cfg(hub_plugins)]
-    async fn update_plugin_settings(
-        &self,
-        identity: &str,
-        entries: HashMap<String, String>,
-    ) -> Result<(), ApiError> {
-        let pm = self.plugin_manager.as_ref().ok_or(ApiError::Unavailable)?;
-        let entries: Vec<(String, String)> = entries.into_iter().collect();
-        pm.update_settings(identity, &entries)
-            .await
-            .map_err(|e| ApiError::Internal(e.to_string()))
-    }
-
-    #[cfg(hub_plugins)]
-    async fn install_plugin_zip(&self, bytes: Vec<u8>) -> Result<String, ApiError> {
-        let pm = self.plugin_manager.as_ref().ok_or(ApiError::Unavailable)?;
-        pm.install_from_zip(bytes)
-            .await
-            .map_err(|e| ApiError::Internal(e.to_string()))
-    }
-
-    #[cfg(hub_plugins)]
-    async fn install_plugin_dev(&self, dir_path: String) -> Result<String, ApiError> {
-        let pm = self.plugin_manager.as_ref().ok_or(ApiError::Unavailable)?;
-        pm.install_dev(Path::new(&dir_path))
-            .await
-            .map_err(|e| ApiError::Internal(e.to_string()))
-    }
-
-    #[cfg(hub_plugins)]
-    /// 逃生舱：清该任务的 resolver 绑定，再经既有 `ContinueTask` 命令按原始
-    /// 链接恢复(镜像 `download_actor` 的 `IgnorePluginRetry` 信号分支)。
-    async fn ignore_plugin_retry(&self, task_id: &str) -> Result<(), ApiError> {
-        self.ensure_task_exists(task_id).await?;
-        if let Some(pm) = &self.plugin_manager {
-            pm.clear_task_resolver(task_id).await;
-        }
-        self.send_cmd(|ack| ApiCommand::ContinueTask {
-            task_id: task_id.to_string(),
-            ack,
-        })
-        .await
-    }
-
-    #[cfg(hub_plugins)]
-    /// 拉取去中心化插件市场索引（多源 failover + 防回滚校验）。
-    async fn market_list(&self) -> Result<Vec<MarketEntryDto>, ApiError> {
-        let client = self.market_client().await?;
-        let idx = client
-            .fetch_index()
-            .await
-            .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-        Ok(idx.entries.into_iter().map(MarketEntryDto::from).collect())
-    }
-
-    #[cfg(hub_plugins)]
-    /// 从市场安装某插件最新版（下载 → content_hash 校验 → 安装），返回 identity。
-    async fn market_install(&self, plugin_id: &str) -> Result<String, ApiError> {
-        let client = self.market_client().await?;
-        client
-            .install_latest(plugin_id)
-            .await
-            .map_err(|e| ApiError::BadRequest(e.to_string()))
-    }
-
-    #[cfg(hub_plugins)]
-    /// 按插件声明权限探测缺失的基础组件（安装成功后回填提醒载荷）。
-    async fn plugin_missing_components(&self, identity: &str) -> Vec<String> {
-        let Some(pm) = self.plugin_manager.as_ref() else {
-            return Vec::new();
-        };
-        let perms = pm.permissions_of(identity).await;
-        fluxdown_engine::plugin::dependencies::missing_components(&self.db, &self.data_dir, &perms)
-            .await
     }
 
     // -- 任务组与前置预解析（Phase D：docs/multi-file-task-group-design.md）--

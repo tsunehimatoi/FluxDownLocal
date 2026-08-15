@@ -215,17 +215,17 @@ class _IncomingPairingDialogState extends State<IncomingPairingDialog> {
 // 共享抽象文件。
 
 IconData _platformIcon(String platform) => switch (platform) {
-      'windows' || 'macos' || 'linux' => LucideIcons.monitor,
-      'android' || 'ios' => LucideIcons.smartphone,
-      'server' => LucideIcons.server,
-      _ => LucideIcons.server,
-    };
+  'windows' || 'macos' || 'linux' => LucideIcons.monitor,
+  'android' || 'ios' => LucideIcons.smartphone,
+  'server' => LucideIcons.server,
+  _ => LucideIcons.server,
+};
 
 String _platformLabel(S s, String platform) => switch (platform) {
-      'windows' => s.accountDevicePlatformWindows,
-      'macos' => s.accountDevicePlatformMacos,
-      'linux' => s.accountDevicePlatformLinux,
-      'android' => s.accountDevicePlatformAndroid,
-      'ios' => s.accountDevicePlatformIos,
-      _ => '—',
-    };
+  'windows' => s.localDevicePlatformWindows,
+  'macos' => s.localDevicePlatformMacos,
+  'linux' => s.localDevicePlatformLinux,
+  'android' => s.localDevicePlatformAndroid,
+  'ios' => s.localDevicePlatformIos,
+  _ => '—',
+};

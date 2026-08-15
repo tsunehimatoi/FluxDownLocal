@@ -21,9 +21,6 @@ import 'edit_threads_dialog.dart';
 import 'file_type_icon.dart';
 import 'task_columns.dart';
 
-/// 插件系统失败任务的错误消息前缀（引擎/hub/server 固定格式，逃生舱按钮据此判断）。
-const _pluginErrorPrefix = '[插件]';
-
 class DetailPanel extends StatefulWidget {
   final DownloadController controller;
   final VoidCallback onClose;
@@ -51,32 +48,11 @@ class DetailPanel extends StatefulWidget {
 }
 
 class _DetailPanelState extends State<DetailPanel> {
-  /// 插件处理耗时显示的 1s 刷新 ticker（仅在有插件活动时运行）。
-  Timer? _pluginTicker;
-
   /// 当前选中 Tab：0=常规 1=队列 2=日志 3=高级（design-proto-spec §12）。
   int _tab = 0;
 
   /// 上一次渲染的任务 ID —— 用于检测「切换到另一个任务」并把 Tab 重置回常规。
   String? _lastTaskId;
-
-  @override
-  void dispose() {
-    _pluginTicker?.cancel();
-    super.dispose();
-  }
-
-  /// 按当前活动状态启停 ticker（build 内调用，幂等）。
-  void _syncPluginTicker(bool active) {
-    if (active && _pluginTicker == null) {
-      _pluginTicker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
-      });
-    } else if (!active && _pluginTicker != null) {
-      _pluginTicker?.cancel();
-      _pluginTicker = null;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,10 +78,6 @@ class _DetailPanelState extends State<DetailPanel> {
                   _lastTaskId = task.id;
                   _tab = 0;
                 }
-                final pluginActive =
-                    task.status == TaskStatus.completed &&
-                    widget.controller.isPluginProcessing(task.id);
-                _syncPluginTicker(pluginActive);
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -120,7 +92,7 @@ class _DetailPanelState extends State<DetailPanel> {
                     ),
                     const SizedBox(height: 2),
                     Expanded(
-                      child: _buildTabContent(c, m, task, pluginActive),
+                      child: _buildTabContent(c, m, task),
                     ),
                   ],
                 );
@@ -300,7 +272,6 @@ class _DetailPanelState extends State<DetailPanel> {
     AppColors c,
     AppMetrics m,
     DownloadTask task,
-    bool pluginActive,
   ) {
     switch (_tab) {
       case 1:
@@ -311,7 +282,7 @@ class _DetailPanelState extends State<DetailPanel> {
         return _buildAdvancedTab(c, task);
       case 0:
       default:
-        return _buildGeneralTab(c, m, task, pluginActive);
+        return _buildGeneralTab(c, m, task);
     }
   }
 
@@ -339,7 +310,6 @@ class _DetailPanelState extends State<DetailPanel> {
     AppColors c,
     AppMetrics m,
     DownloadTask task,
-    bool pluginActive,
   ) {
     if (widget.isBottom) {
       // 底部横向布局：左（进度头区+下载分布）flex2，1px 分隔，右（信息字段
@@ -354,7 +324,7 @@ class _DetailPanelState extends State<DetailPanel> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: [_buildProgress(c, m, task, pluginActive)],
+                children: [_buildProgress(c, m, task)],
               ),
             ),
           ),
@@ -386,7 +356,7 @@ class _DetailPanelState extends State<DetailPanel> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildProgress(c, m, task, pluginActive),
+                _buildProgress(c, m, task),
                 const SizedBox(height: 20),
                 ..._buildGeneralFields(c, m, task),
               ],
@@ -410,11 +380,6 @@ class _DetailPanelState extends State<DetailPanel> {
     if (task.errorMessage.isNotEmpty) {
       widgets.add(const SizedBox(height: 10));
       widgets.add(_buildErrorRow(c, task.errorMessage));
-    }
-    if (task.status == TaskStatus.error &&
-        task.errorMessage.startsWith(_pluginErrorPrefix)) {
-      widgets.add(const SizedBox(height: 8));
-      widgets.add(_buildIgnorePluginRetryButton(c, task));
     }
     widgets.add(const SizedBox(height: 16));
     if (task.groupId.isNotEmpty &&
@@ -525,7 +490,6 @@ class _DetailPanelState extends State<DetailPanel> {
     AppColors c,
     AppMetrics m,
     DownloadTask task,
-    bool pluginActive,
   ) {
     final rawSegs = task.segments;
     final hasSegs =
@@ -567,7 +531,6 @@ class _DetailPanelState extends State<DetailPanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (pluginActive) _buildPluginActivityCard(c, task),
         // 大号百分比 + 同行小字 done/total
         Row(
           crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -982,55 +945,6 @@ class _DetailPanelState extends State<DetailPanel> {
     );
   }
 
-  Widget _buildIgnorePluginRetryButton(AppColors c, DownloadTask task) {
-    return SizedBox(
-      width: double.infinity,
-      child: ShadButton.outline(
-        onPressed: () => _confirmIgnorePluginRetry(task.id),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(LucideIcons.shieldOff, size: 14, color: c.textPrimary),
-            const SizedBox(width: 6),
-            Text(
-              currentS.taskIgnorePluginRetry,
-              style: TextStyle(fontSize: 13, color: c.textPrimary),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 逃生舱：确认后忽略插件重新解析，直接用原始链接恢复下载。
-  void _confirmIgnorePluginRetry(String taskId) {
-    final c = AppColors.of(context);
-    final s = currentS;
-    showShadDialog(
-      context: context,
-      barrierColor: c.dialogBarrier,
-      animateIn: const [],
-      animateOut: const [],
-      builder: (ctx) => ShadDialog(
-        title: Text(s.taskIgnorePluginRetryTitle),
-        description: Text(s.taskIgnorePluginRetryMsg),
-        actions: [
-          ShadButton.outline(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: Text(s.cancel),
-          ),
-          ShadButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              IgnorePluginRetry(taskId: taskId).sendSignalToRust();
-            },
-            child: Text(s.taskIgnorePluginRetry),
-          ),
-        ],
-      ),
-    );
-  }
-
   // ---------------------------------------------------------------------------
   // 信息行辅助
   // ---------------------------------------------------------------------------
@@ -1300,77 +1214,6 @@ class _DetailPanelState extends State<DetailPanel> {
         ],
       ),
     );
-  }
-
-  /// 插件处理中卡片 — 已完成任务的 onDone 钩子（如 ffmpeg 转码）仍在运行：
-  /// 显示旋转指示、插件 identity 与已耗时（ticker 每秒刷新）。
-  /// 旁路 UI 指示，不代表任务状态机。
-  Widget _buildPluginActivityCard(AppColors c, DownloadTask task) {
-    final ids = widget.controller.pluginProcessingIds(task.id);
-    final since = widget.controller.pluginProcessingSince(task.id);
-    final elapsed = since == null ? null : DateTime.now().difference(since);
-    final title = elapsed == null
-        ? currentS.pluginProcessing
-        : '${currentS.pluginProcessing} · ${_formatElapsed(elapsed)}';
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        decoration: BoxDecoration(
-          color: c.accent.withValues(alpha: 0.06),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: c.accent.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.5,
-                  color: c.accent,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                      color: c.accent,
-                    ),
-                  ),
-                  if (ids.isNotEmpty) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      ids.join('、'),
-                      style: TextStyle(fontSize: 10.5, color: c.textMuted),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 耗时格式：`23s` / `1m05s`。
-  static String _formatElapsed(Duration d) {
-    final mins = d.inMinutes;
-    final secs = d.inSeconds % 60;
-    if (mins <= 0) return '${secs}s';
-    return '${mins}m${secs.toString().padLeft(2, '0')}s';
   }
 
   /// `yyyy-MM-dd HH:mm:ss` 本地时间格式（结束时间 / 日志时间戳等精确场景）。

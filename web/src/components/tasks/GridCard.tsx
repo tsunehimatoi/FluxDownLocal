@@ -50,7 +50,6 @@ export function TaskGridCard({ task: t, queues, protocolBadges }: { task: ViewTa
   const boostMut = useMutation({ mutationFn: () => api.boostTask(t.taskId), onSuccess: invalidate })
   const deleteMut = useMutation({ mutationFn: (deleteFiles: boolean) => api.deleteTask(t.taskId, deleteFiles), onSuccess: invalidate })
   const moveMut = useMutation({ mutationFn: (queueId: string) => api.moveTaskToQueue(t.taskId, queueId), onSuccess: invalidate })
-  const ignorePluginRetryMut = useMutation({ mutationFn: () => api.ignorePluginRetry(t.taskId), onSuccess: invalidate })
 
   const Icon = TYPE_ICONS[fileType(t.fileName, t.url)]
   const pct = t.totalBytes > 0 ? Math.round((t.downloadedBytes / t.totalBytes) * 100) : 0
@@ -137,7 +136,6 @@ export function TaskGridCard({ task: t, queues, protocolBadges }: { task: ViewTa
             t={t}
             onPause={() => pauseMut.mutate()}
             onContinue={() => continueMut.mutate()}
-            onIgnorePluginRetry={() => ignorePluginRetryMut.mutate()}
           />
         </div>
       </div>

@@ -12,8 +12,6 @@ import * as Dialog from '@radix-ui/react-dialog'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ChevronRight, Plus, X } from 'lucide-react'
 import { api } from '../../lib/api'
-import { cloudApi } from '../../lib/cloud/client'
-import { cloudDeviceId, useCloudSession } from '../../lib/cloud/session'
 import { linkApi } from '../../lib/link'
 import { cn } from '../../lib/cn'
 import { queueDisplayName } from '../../lib/format'
@@ -70,9 +68,7 @@ interface FormState {
   httpPassword: string
   saveSiteAuth: boolean
   advOpen: boolean
-  /** 下发目标：空串 = 本机（默认，走现有本地引擎路径）；`cloud:<deviceId>` = FluxCloud
-   *  云中转已登录设备；`link:<fingerprint>` = 局域网直连(link)已配对设备。见下方
-   *  showDeviceSelect/deviceOptions（两类来源互斥，提交时按前缀还原）。 */
+  /** 下发目标：空串 = 本机；`link:<fingerprint>` = 局域网直连配对设备。 */
   deviceId: string
 }
 
@@ -127,15 +123,6 @@ export function NewDownloadDialog() {
   const { data: config } = useQuery({ queryKey: ['config'], queryFn: api.getConfig, enabled: open })
   const { data: queues } = useQuery({ queryKey: ['queues'], queryFn: api.listQueues, enabled: open })
   const { data: stats } = useQuery({ queryKey: ['stats'], queryFn: api.stats, enabled: open })
-  const session = useCloudSession()
-  const { data: cloudDevices = [] } = useQuery({
-    queryKey: ['cloud', 'devices'],
-    queryFn: () => cloudApi.devices().then((r) => r.devices),
-    enabled: open && session.status === 'authenticated',
-    staleTime: 10_000,
-  })
-  const remoteDevices = cloudDevices.filter((d) => d.deviceId !== cloudDeviceId())
-  const showCloudDevices = session.status === 'authenticated' && remoteDevices.length > 0
   // 本地设备(link)分组：局域网直连已配对设备，与云中转完全独立；宿主未启用/不支持时
   // 该请求失败（见 lib/link.ts isLinkUnsupportedError），静默按空列表处理，分组不出现。
   const { data: linkDevices = [] } = useQuery({
@@ -146,12 +133,9 @@ export function NewDownloadDialog() {
     retry: false,
   })
   const showLinkDevices = linkDevices.length > 0
-  const showDeviceSelect = showCloudDevices || showLinkDevices
+  const showDeviceSelect = showLinkDevices
   const deviceOptions = [
-    { value: '', label: t('cloud.deviceCurrent') },
-    ...(showCloudDevices
-      ? remoteDevices.map((d) => ({ value: `cloud:${d.deviceId}`, label: d.name || '-', group: t('newDl.deviceGroupCloud') }))
-      : []),
+    { value: '', label: t('device.current') },
     ...(showLinkDevices
       ? linkDevices.map((d) => ({ value: `link:${d.fingerprint}`, label: d.name || '-', group: t('newDl.deviceGroupDirect') }))
       : []),
@@ -321,18 +305,10 @@ export function NewDownloadDialog() {
     const nextErrors: Record<number, string> = {}
     let anyOk = false
     const linkFingerprint = form.deviceId.startsWith('link:') ? form.deviceId.slice('link:'.length) : ''
-    const cloudTarget = form.deviceId.startsWith('cloud:') ? form.deviceId.slice('cloud:'.length) : ''
     for (let i = 0; i < urlLines.length; i++) {
       try {
         if (linkFingerprint) {
           await linkApi.dispatchTask(linkFingerprint, {
-            url: urlLines[i],
-            saveDir: form.saveDir.trim() || undefined,
-            fileName: isSingle ? form.fileName.trim() || undefined : undefined,
-          })
-        } else if (cloudTarget) {
-          await cloudApi.dispatchTask({
-            toDevice: cloudTarget,
             url: urlLines[i],
             saveDir: form.saveDir.trim() || undefined,
             fileName: isSingle ? form.fileName.trim() || undefined : undefined,

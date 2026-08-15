@@ -643,7 +643,7 @@ class _ActionButton extends StatelessWidget {
 
     if (task.status == TaskStatus.canceled) {
       // 已取消：与 completed 同款只读圆形指示，禁止实现「继续」——只可能是
-      // 其他设备取消的远程任务镜像，本机点按无意义。
+      // 已取消终态，本机点按无意义。
       return Container(
         width: 32,
         height: 32,

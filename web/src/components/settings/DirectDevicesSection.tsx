@@ -1,7 +1,6 @@
 // 直连设备（link）：无需登录任何账号，与同一局域网内、或经自建内网穿透/组网（地址可达
-// 即可）的另一台 FluxDown 直接配对——与云账户（CloudAccountSettings 的云中转设备）完全
-// 独立。作为账户设置页内嵌的一个 section 渲染（见 CloudAccountSettings.tsx），不是独立
-// 设置分类：已配对名册（在线圆点/平台图标/移除确认）+ 显示本机配对码（POST /link/code）+
+// 即可）的另一台 FluxDown 直接配对。完全在局域网内工作，不依赖外部服务。
+// 已配对名册（在线圆点/平台图标/移除确认）+ 显示本机配对码（POST /link/code）+
 // 添加设备入口（弹窗见 add-local-device.tsx）。宿主未启用/不支持互联时整节退化为一条
 // 友好提示，不渲染操作入口。
 
@@ -17,15 +16,14 @@ import { SetRow } from './controls'
 
 const DEVICES_QUERY_KEY = ['link', 'devices']
 
-// 平台标签：复用云账户设备管理已有的 cloud.platform.* 翻译键（取值集合相同：
-// windows|macos|linux|android|ios|web），避免重复造一套等价文案。
+// 平台标签。未知平台原样兜底，便于未来新端。
 const PLATFORM_LABEL_KEYS: Record<string, I18nKey> = {
-  windows: 'cloud.platform.windows',
-  macos: 'cloud.platform.macos',
-  linux: 'cloud.platform.linux',
-  android: 'cloud.platform.android',
-  ios: 'cloud.platform.ios',
-  web: 'cloud.platform.web',
+  windows: 'localDevice.platform.windows',
+  macos: 'localDevice.platform.macos',
+  linux: 'localDevice.platform.linux',
+  android: 'localDevice.platform.android',
+  ios: 'localDevice.platform.ios',
+  web: 'localDevice.platform.web',
 }
 
 function platformLabel(t: (key: I18nKey) => string, platform?: string): string {

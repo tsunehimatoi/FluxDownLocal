@@ -32,126 +32,104 @@ bool _deepEquals(dynamic a, dynamic b) {
 
 void main() {
   group('QuickPopupPayload', () {
-    test(
-      '全字段 roundtrip：多队列 / 中文文件名 / 多行 URL / 嵌套主题 tokens',
-      () {
-        const original = QuickPopupPayload(
-          requestId: 42,
-          url:
-              'https://example.com/a.zip\nhttps://example.com/b.zip\nmagnet:?xt=urn:btih:abc',
-          filename: '测试文件名 中文 (1).zip',
-          fileSize: 123456789,
-          mimeType: 'application/zip',
-          saveDir: r'C:\Users\zero\Downloads\子目录',
-          cookies: 'session=abc123; token=中文值',
-          locale: 'zh',
-          tokensJson: {
-            'colors': {
-              'primary': '#FF0000',
-              'nested': {'deep': 1, 'deeper': true},
-            },
-            'radius': 8.5,
-            'flag': true,
-            'list': [1, 2, 3, '四'],
+    test('全字段 roundtrip：多队列 / 中文文件名 / 多行 URL / 嵌套主题 tokens', () {
+      const original = QuickPopupPayload(
+        requestId: 42,
+        url:
+            'https://example.com/a.zip\nhttps://example.com/b.zip\nmagnet:?xt=urn:btih:abc',
+        filename: '测试文件名 中文 (1).zip',
+        fileSize: 123456789,
+        mimeType: 'application/zip',
+        saveDir: r'C:\Users\zero\Downloads\子目录',
+        cookies: 'session=abc123; token=中文值',
+        locale: 'zh',
+        tokensJson: {
+          'colors': {
+            'primary': '#FF0000',
+            'nested': {'deep': 1, 'deeper': true},
           },
-          defaultSegments: 4,
-          lastDialogThreads: '8',
-          defaultQueueId: 'queue-1',
-          queues: [
-            QuickQueueOption(
-              queueId: 'queue-1',
-              name: '默认队列',
-              defaultSegments: 4,
-            ),
-            QuickQueueOption(
-              queueId: 'queue-2',
-              name: 'Queue Two',
-              defaultSegments: 0,
-            ),
-          ],
-          devices: [
-            QuickDeviceOption(
-              deviceId: 'cloud-dev-1',
-              name: '云设备',
-              platform: 'windows',
-              isOnline: true,
-            ),
-          ],
-          localDevices: [
-            QuickDeviceOption(
-              deviceId: 'AA:BB:CC:DD',
-              name: '局域网设备',
-              platform: 'linux',
-              isOnline: false,
-            ),
-          ],
-        );
+          'radius': 8.5,
+          'flag': true,
+          'list': [1, 2, 3, '四'],
+        },
+        defaultSegments: 4,
+        lastDialogThreads: '8',
+        defaultQueueId: 'queue-1',
+        queues: [
+          QuickQueueOption(
+            queueId: 'queue-1',
+            name: '默认队列',
+            defaultSegments: 4,
+          ),
+          QuickQueueOption(
+            queueId: 'queue-2',
+            name: 'Queue Two',
+            defaultSegments: 0,
+          ),
+        ],
+        localDevices: [
+          QuickDeviceOption(
+            deviceId: 'AA:BB:CC:DD',
+            name: '局域网设备',
+            platform: 'linux',
+            isOnline: false,
+          ),
+        ],
+      );
 
-        final decoded = QuickPopupPayload.fromJsonString(
-          original.toJsonString(),
-        );
+      final decoded = QuickPopupPayload.fromJsonString(original.toJsonString());
 
-        expect(decoded.requestId, original.requestId);
-        expect(decoded.url, original.url);
-        expect(decoded.filename, original.filename);
-        expect(decoded.fileSize, original.fileSize);
-        expect(decoded.mimeType, original.mimeType);
-        expect(decoded.saveDir, original.saveDir);
-        expect(decoded.cookies, original.cookies);
-        expect(decoded.locale, original.locale);
+      expect(decoded.requestId, original.requestId);
+      expect(decoded.url, original.url);
+      expect(decoded.filename, original.filename);
+      expect(decoded.fileSize, original.fileSize);
+      expect(decoded.mimeType, original.mimeType);
+      expect(decoded.saveDir, original.saveDir);
+      expect(decoded.cookies, original.cookies);
+      expect(decoded.locale, original.locale);
+      expect(
+        _deepEquals(decoded.tokensJson, original.tokensJson),
+        isTrue,
+        reason: 'tokensJson 嵌套结构应在往返后语义相等',
+      );
+      expect(decoded.defaultSegments, original.defaultSegments);
+      expect(decoded.lastDialogThreads, original.lastDialogThreads);
+      expect(decoded.defaultQueueId, original.defaultQueueId);
+
+      expect(decoded.queues.length, original.queues.length);
+      for (var i = 0; i < original.queues.length; i++) {
         expect(
-          _deepEquals(decoded.tokensJson, original.tokensJson),
-          isTrue,
-          reason: 'tokensJson 嵌套结构应在往返后语义相等',
-        );
-        expect(decoded.defaultSegments, original.defaultSegments);
-        expect(decoded.lastDialogThreads, original.lastDialogThreads);
-        expect(decoded.defaultQueueId, original.defaultQueueId);
-
-        expect(decoded.queues.length, original.queues.length);
-        for (var i = 0; i < original.queues.length; i++) {
-          expect(
-            decoded.queues[i].queueId,
-            original.queues[i].queueId,
-            reason: 'queues[$i].queueId',
-          );
-          expect(
-            decoded.queues[i].name,
-            original.queues[i].name,
-            reason: 'queues[$i].name',
-          );
-          expect(
-            decoded.queues[i].defaultSegments,
-            original.queues[i].defaultSegments,
-            reason: 'queues[$i].defaultSegments',
-          );
-        }
-
-        expect(decoded.devices.length, original.devices.length);
-        expect(decoded.devices.first.deviceId, original.devices.first.deviceId);
-        expect(decoded.devices.first.name, original.devices.first.name);
-        expect(decoded.devices.first.platform, original.devices.first.platform);
-        expect(decoded.devices.first.isOnline, original.devices.first.isOnline);
-
-        expect(decoded.localDevices.length, original.localDevices.length);
-        expect(
-          decoded.localDevices.first.deviceId,
-          original.localDevices.first.deviceId,
+          decoded.queues[i].queueId,
+          original.queues[i].queueId,
+          reason: 'queues[$i].queueId',
         );
         expect(
-          decoded.localDevices.first.name,
-          original.localDevices.first.name,
+          decoded.queues[i].name,
+          original.queues[i].name,
+          reason: 'queues[$i].name',
         );
         expect(
-          decoded.localDevices.first.platform,
-          original.localDevices.first.platform,
+          decoded.queues[i].defaultSegments,
+          original.queues[i].defaultSegments,
+          reason: 'queues[$i].defaultSegments',
         );
-        expect(
-          decoded.localDevices.first.isOnline,
-          original.localDevices.first.isOnline,
-        );
-      },
-    );
+      }
+
+      expect(decoded.localDevices.length, original.localDevices.length);
+      expect(
+        decoded.localDevices.first.deviceId,
+        original.localDevices.first.deviceId,
+      );
+      expect(decoded.localDevices.first.name, original.localDevices.first.name);
+      expect(
+        decoded.localDevices.first.platform,
+        original.localDevices.first.platform,
+      );
+      expect(
+        decoded.localDevices.first.isOnline,
+        original.localDevices.first.isOnline,
+      );
+    });
 
     test('边界：所有字符串字段为空、segments=0、队列为空列表', () {
       const original = QuickPopupPayload(
@@ -170,9 +148,7 @@ void main() {
         queues: [],
       );
 
-      final decoded = QuickPopupPayload.fromJsonString(
-        original.toJsonString(),
-      );
+      final decoded = QuickPopupPayload.fromJsonString(original.toJsonString());
 
       expect(decoded.requestId, 0);
       expect(decoded.url, '');
@@ -191,33 +167,36 @@ void main() {
       expect(decoded.queues, isEmpty);
     });
 
-    test('容错：手工构造最小 JSON，缺失 queues/lastDialogThreads/defaultQueueId 等可选字段不抛异常', () {
-      // 仅保留必需的 requestId / req.url / env.tokens（tokensJson 本身无回退，
-      // 必须提供），其余可选字段全部省略，模拟弹窗引擎收到旧版/精简载荷。
-      const minimalJson =
-          '{"requestId":7,"req":{"url":"https://example.com/x"},'
-          '"env":{"tokens":{}}}';
+    test(
+      '容错：手工构造最小 JSON，缺失 queues/lastDialogThreads/defaultQueueId 等可选字段不抛异常',
+      () {
+        // 仅保留必需的 requestId / req.url / env.tokens（tokensJson 本身无回退，
+        // 必须提供），其余可选字段全部省略，模拟弹窗引擎收到旧版/精简载荷。
+        const minimalJson =
+            '{"requestId":7,"req":{"url":"https://example.com/x"},'
+            '"env":{"tokens":{}}}';
 
-      late QuickPopupPayload decoded;
-      expect(
-        () => decoded = QuickPopupPayload.fromJsonString(minimalJson),
-        returnsNormally,
-      );
+        late QuickPopupPayload decoded;
+        expect(
+          () => decoded = QuickPopupPayload.fromJsonString(minimalJson),
+          returnsNormally,
+        );
 
-      expect(decoded.requestId, 7);
-      expect(decoded.url, 'https://example.com/x');
-      expect(decoded.filename, '');
-      expect(decoded.fileSize, 0);
-      expect(decoded.mimeType, '');
-      expect(decoded.saveDir, '');
-      expect(decoded.cookies, '');
-      expect(decoded.locale, 'en');
-      expect(decoded.tokensJson, isEmpty);
-      expect(decoded.defaultSegments, 0);
-      expect(decoded.lastDialogThreads, '');
-      expect(decoded.defaultQueueId, '');
-      expect(decoded.queues, isEmpty);
-    });
+        expect(decoded.requestId, 7);
+        expect(decoded.url, 'https://example.com/x');
+        expect(decoded.filename, '');
+        expect(decoded.fileSize, 0);
+        expect(decoded.mimeType, '');
+        expect(decoded.saveDir, '');
+        expect(decoded.cookies, '');
+        expect(decoded.locale, 'en');
+        expect(decoded.tokensJson, isEmpty);
+        expect(decoded.defaultSegments, 0);
+        expect(decoded.lastDialogThreads, '');
+        expect(decoded.defaultQueueId, '');
+        expect(decoded.queues, isEmpty);
+      },
+    );
 
     test('容错：队列元素缺失 name/defaultSegments 时逐项回退默认值', () {
       const json =
@@ -241,8 +220,7 @@ void main() {
       const original = QuickPopupResult(
         requestId: 99,
         form: QuickDownloadFormResult(
-          urlText:
-              'https://example.com/a.zip\nhttps://example.com/b.zip',
+          urlText: 'https://example.com/a.zip\nhttps://example.com/b.zip',
           saveDir: r'D:\下载\分类目录',
           rename: '重命名后的文件 (最终版).zip',
           segments: 16,
@@ -256,9 +234,7 @@ void main() {
         ),
       );
 
-      final decoded = QuickPopupResult.fromJsonString(
-        original.toJsonString(),
-      );
+      final decoded = QuickPopupResult.fromJsonString(original.toJsonString());
 
       expect(decoded.requestId, original.requestId);
       expect(decoded.form.urlText, original.form.urlText);
@@ -294,9 +270,7 @@ void main() {
         ),
       );
 
-      final decoded = QuickPopupResult.fromJsonString(
-        original.toJsonString(),
-      );
+      final decoded = QuickPopupResult.fromJsonString(original.toJsonString());
 
       expect(decoded.requestId, 0);
       expect(decoded.form.urlText, '');
@@ -311,8 +285,7 @@ void main() {
     });
 
     test('容错：手工构造最小 JSON，缺失 rename/segments/threadsUserModified 等可选字段不抛异常', () {
-      const minimalJson =
-          '{"requestId":9,"urlText":"https://example.com/y"}';
+      const minimalJson = '{"requestId":9,"urlText":"https://example.com/y"}';
 
       late QuickPopupResult decoded;
       expect(
@@ -353,9 +326,7 @@ void main() {
         ),
       );
 
-      final decoded = QuickPopupResult.fromJsonString(
-        original.toJsonString(),
-      );
+      final decoded = QuickPopupResult.fromJsonString(original.toJsonString());
 
       expect(decoded.form.extraHeaders, {
         'Authorization': 'Bearer token-123',
@@ -364,8 +335,7 @@ void main() {
     });
 
     test('容错：手工构造 JSON 缺失 extraHeaders 字段时回退空 map', () {
-      const minimalJson =
-          '{"requestId":9,"urlText":"https://example.com/y"}';
+      const minimalJson = '{"requestId":9,"urlText":"https://example.com/y"}';
 
       final decoded = QuickPopupResult.fromJsonString(minimalJson);
 

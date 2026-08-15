@@ -13,8 +13,6 @@ import 'package:flutter/material.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 
 import '../i18n/locale_provider.dart';
-import '../services/cloud/cloud_auth_service.dart';
-import '../services/cloud/cloud_models.dart';
 import '../services/link/link_models.dart';
 import '../services/link/local_pairing_service.dart';
 import '../theme/app_colors.dart';
@@ -26,9 +24,7 @@ void showAddDeviceDialog(BuildContext context) {
   showShadDialog(context: context, builder: (_) => const AddDeviceDialog());
 }
 
-enum _AddDeviceTab { account, local }
-
-/// 双 Tab 添加设备弹窗。默认页由登录态决定（登录→账户自动；未登录→本地配对）。
+/// 纯局域网直接配对弹窗。
 class AddDeviceDialog extends StatefulWidget {
   const AddDeviceDialog({super.key});
 
@@ -37,7 +33,6 @@ class AddDeviceDialog extends StatefulWidget {
 }
 
 class _AddDeviceDialogState extends State<AddDeviceDialog> {
-  late _AddDeviceTab _tab;
   final _codeCtrl = TextEditingController();
   final _hostCtrl = TextEditingController();
   final _portCtrl = TextEditingController(text: '17800');
@@ -46,13 +41,7 @@ class _AddDeviceDialogState extends State<AddDeviceDialog> {
   @override
   void initState() {
     super.initState();
-    _tab = CloudAuthService.instance.isLoggedIn
-        ? _AddDeviceTab.account
-        : _AddDeviceTab.local;
-    if (_tab == _AddDeviceTab.local) {
-      // 进入本地配对页即开始局域网发现；退出（dispose）时停止。
-      LocalPairingService.instance.startDiscovery();
-    }
+    LocalPairingService.instance.startDiscovery();
   }
 
   @override
@@ -62,16 +51,6 @@ class _AddDeviceDialogState extends State<AddDeviceDialog> {
     _hostCtrl.dispose();
     _portCtrl.dispose();
     super.dispose();
-  }
-
-  void _switchTab(_AddDeviceTab tab) {
-    if (_tab == tab) return;
-    setState(() => _tab = tab);
-    if (tab == _AddDeviceTab.local) {
-      LocalPairingService.instance.startDiscovery();
-    } else {
-      LocalPairingService.instance.stopDiscovery();
-    }
   }
 
   @override
@@ -92,237 +71,19 @@ class _AddDeviceDialogState extends State<AddDeviceDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: 4),
-            _segmented(s),
-            const SizedBox(height: 14),
-            if (_tab == _AddDeviceTab.account)
-              _AccountTab()
-            else
-              _LocalTab(
-                codeCtrl: _codeCtrl,
-                hostCtrl: _hostCtrl,
-                portCtrl: _portCtrl,
-                manual: _manual,
-                onToggleManual: () => setState(() => _manual = !_manual),
-              ),
+            _LocalTab(
+              codeCtrl: _codeCtrl,
+              hostCtrl: _hostCtrl,
+              portCtrl: _portCtrl,
+              manual: _manual,
+              onToggleManual: () => setState(() => _manual = !_manual),
+            ),
           ],
         ),
       ),
     );
   }
-
-  Widget _segmented(S s) {
-    final c = AppColors.of(context);
-    final m = AppMetrics.of(context);
-    Widget seg(String label, _AddDeviceTab tab) {
-      final active = _tab == tab;
-      return Expanded(
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: () => _switchTab(tab),
-          child: Container(
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: active ? c.surface1 : Colors.transparent,
-              borderRadius: m.brInput,
-              border: active
-                  ? Border.all(color: m.borderFade(c.border))
-                  : null,
-            ),
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-                color: active ? c.textPrimary : c.textMuted,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        color: c.surface2,
-        borderRadius: m.brInput,
-      ),
-      child: Row(
-        children: [
-          seg(s.addDeviceTabAccount, _AddDeviceTab.account),
-          const SizedBox(width: 3),
-          seg(s.addDeviceTabLocal, _AddDeviceTab.local),
-        ],
-      ),
-    );
-  }
 }
-
-// ─────────────────────────────────────────────────────────────────────────
-// 账户自动 Tab
-// ─────────────────────────────────────────────────────────────────────────
-
-class _AccountTab extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final s = LocaleScope.of(context);
-    final c = AppColors.of(context);
-    final m = AppMetrics.of(context);
-    return ListenableBuilder(
-      listenable: CloudAuthService.instance,
-      builder: (context, _) {
-        final auth = CloudAuthService.instance;
-        final user = auth.user;
-        if (user == null) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                s.addDeviceHint,
-                style: TextStyle(fontSize: 12.5, height: 1.5, color: c.textSecondary),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                s.addDeviceLoginRequired,
-                style: TextStyle(fontSize: 12, color: c.statusError),
-              ),
-            ],
-          );
-        }
-        final account = user.originId != null
-            ? '${user.email}  ·  #${user.originId}'
-            : user.email;
-        final devices = auth.devices;
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // 已登录徽标。
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: c.statusSuccess.withValues(alpha: 0.10),
-                borderRadius: m.brInput,
-              ),
-              child: Row(
-                children: [
-                  Icon(LucideIcons.check, size: 14, color: c.statusSuccess),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      s.addDeviceAccountSynced(account),
-                      style: TextStyle(fontSize: 12, color: c.textSecondary),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-            if (devices.isEmpty)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  s.accountDevicesEmpty,
-                  style: TextStyle(fontSize: 12, color: c.textMuted),
-                  textAlign: TextAlign.center,
-                ),
-              )
-            else
-              Container(
-                decoration: BoxDecoration(
-                  borderRadius: m.brInput,
-                  border: Border.all(color: m.borderFade(c.border)),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Column(
-                  children: [
-                    for (var i = 0; i < devices.length; i++) ...[
-                      if (i > 0)
-                        Container(
-                          height: 1,
-                          margin: const EdgeInsets.only(left: 46),
-                          color: m.borderFade(c.border),
-                        ),
-                      _CloudDeviceRow(device: devices[i]),
-                    ],
-                  ],
-                ),
-              ),
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(LucideIcons.info, size: 13, color: c.textMuted),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    s.addDeviceAccountFooter,
-                    style: TextStyle(fontSize: 11.5, height: 1.5, color: c.textMuted),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _CloudDeviceRow extends StatelessWidget {
-  final CloudDevice device;
-  const _CloudDeviceRow({required this.device});
-
-  @override
-  Widget build(BuildContext context) {
-    final s = LocaleScope.of(context);
-    final c = AppColors.of(context);
-    final isCurrent = device.deviceId == CloudAuthService.instance.currentDeviceId;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      child: Row(
-        children: [
-          Icon(_platformIcon(device.platform), size: 16, color: c.textSecondary),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  device.name,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    color: c.textPrimary,
-                  ),
-                ),
-                Text(
-                  isCurrent ? s.thisDevice : _platformLabel(s, device.platform),
-                  style: TextStyle(fontSize: 11, color: c.textMuted),
-                ),
-              ],
-            ),
-          ),
-          _statusDot(device.isOnline ? c.statusSuccess : c.textMuted),
-          const SizedBox(width: 6),
-          Text(
-            device.isOnline ? s.deviceOnline : s.deviceOffline,
-            style: TextStyle(
-              fontSize: 11,
-              color: device.isOnline ? c.statusSuccess : c.textMuted,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// 本地配对 Tab
-// ─────────────────────────────────────────────────────────────────────────
 
 class _LocalTab extends StatefulWidget {
   final TextEditingController codeCtrl;
@@ -381,12 +142,16 @@ class _LocalTabState extends State<_LocalTab> {
     final s = LocaleScope.of(context);
     final code = widget.codeCtrl.text.trim();
     if (code.length < 6) {
-      FluxSonner.of(context).show(ShadToast.destructive(
-        title: Text(s.localPairingCodeIncomplete),
-      ));
+      FluxSonner.of(
+        context,
+      ).show(ShadToast.destructive(title: Text(s.localPairingCodeIncomplete)));
       return;
     }
-    LocalPairingService.instance.beginPairing(host: host, port: port, code: code);
+    LocalPairingService.instance.beginPairing(
+      host: host,
+      port: port,
+      code: code,
+    );
   }
 
   @override
@@ -420,7 +185,11 @@ class _LocalTabState extends State<_LocalTab> {
                 Expanded(
                   child: Text(
                     s.localPairingHint,
-                    style: TextStyle(fontSize: 11.5, height: 1.5, color: c.textMuted),
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      height: 1.5,
+                      color: c.textMuted,
+                    ),
                   ),
                 ),
               ],
@@ -444,7 +213,10 @@ class _LocalTabState extends State<_LocalTab> {
                                 children: [
                                   Text(
                                     s.localPairingNoDevices,
-                                    style: TextStyle(fontSize: 12, color: c.textMuted),
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: c.textMuted,
+                                    ),
                                   ),
                                   const SizedBox(height: 8),
                                   ShadButton.outline(
@@ -456,7 +228,10 @@ class _LocalTabState extends State<_LocalTab> {
                               )
                             : Text(
                                 s.localPairingDiscovering,
-                                style: TextStyle(fontSize: 12, color: c.textMuted),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: c.textMuted,
+                                ),
                               ),
                       ),
                     )
@@ -487,7 +262,11 @@ class _LocalTabState extends State<_LocalTab> {
             // 配对码输入。
             Text(
               s.localPairingCodeLabel,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.textSecondary),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: c.textSecondary,
+              ),
             ),
             const SizedBox(height: 6),
             ShadInput(
@@ -509,7 +288,9 @@ class _LocalTabState extends State<_LocalTab> {
               child: Row(
                 children: [
                   Icon(
-                    widget.manual ? LucideIcons.chevronDown : LucideIcons.chevronRight,
+                    widget.manual
+                        ? LucideIcons.chevronDown
+                        : LucideIcons.chevronRight,
                     size: 14,
                     color: c.accent,
                   ),
@@ -550,16 +331,20 @@ class _LocalTabState extends State<_LocalTab> {
                   onPressed: () {
                     final host = widget.hostCtrl.text.trim();
                     if (host.isEmpty) {
-                      FluxSonner.of(context).show(ShadToast.destructive(
-                        title: Text(s.localPairingHostRequired),
-                      ));
+                      FluxSonner.of(context).show(
+                        ShadToast.destructive(
+                          title: Text(s.localPairingHostRequired),
+                        ),
+                      );
                       return;
                     }
                     final port = int.tryParse(widget.portCtrl.text.trim());
                     if (port == null || port < 1 || port > 65535) {
-                      FluxSonner.of(context).show(ShadToast.destructive(
-                        title: Text(s.localPairingPortInvalid),
-                      ));
+                      FluxSonner.of(context).show(
+                        ShadToast.destructive(
+                          title: Text(s.localPairingPortInvalid),
+                        ),
+                      );
                       return;
                     }
                     _connect(context, host, port);
@@ -664,9 +449,15 @@ class _SasViewState extends State<_SasView> {
     if (svc.pendingChallenge != null) return;
     _waitingPeer = false;
     if (svc.lastError == null) {
-      FluxSonner.of(context).show(ShadToast(
-        title: Text(LocaleScope.of(context).localPairingPaired(widget.challenge.peerName)),
-      ));
+      FluxSonner.of(context).show(
+        ShadToast(
+          title: Text(
+            LocaleScope.of(
+              context,
+            ).localPairingPaired(widget.challenge.peerName),
+          ),
+        ),
+      );
     }
   }
 
@@ -689,7 +480,11 @@ class _SasViewState extends State<_SasView> {
       children: [
         Text(
           s.localPairingSasTitle,
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: c.textPrimary),
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: c.textPrimary,
+          ),
         ),
         const SizedBox(height: 4),
         Text(
@@ -699,10 +494,7 @@ class _SasViewState extends State<_SasView> {
         const SizedBox(height: 14),
         Container(
           padding: const EdgeInsets.symmetric(vertical: 18),
-          decoration: BoxDecoration(
-            color: c.surface2,
-            borderRadius: m.brInput,
-          ),
+          decoration: BoxDecoration(color: c.surface2, borderRadius: m.brInput),
           alignment: Alignment.center,
           child: Text(
             spaced,
@@ -761,27 +553,9 @@ class _SasViewState extends State<_SasView> {
 
 // ── 共享小工具 ────────────────────────────────────────────────────────────
 
-Widget _statusDot(Color color) => Container(
-      width: 8,
-      height: 8,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: color,
-      ),
-    );
-
 IconData _platformIcon(String? platform) => switch (platform) {
-      'windows' || 'macos' || 'linux' => LucideIcons.monitor,
-      'android' || 'ios' => LucideIcons.smartphone,
-      'server' => LucideIcons.server,
-      _ => LucideIcons.server,
-    };
-
-String _platformLabel(S s, String? platform) => switch (platform) {
-      'windows' => s.accountDevicePlatformWindows,
-      'macos' => s.accountDevicePlatformMacos,
-      'linux' => s.accountDevicePlatformLinux,
-      'android' => s.accountDevicePlatformAndroid,
-      'ios' => s.accountDevicePlatformIos,
-      _ => '—',
-    };
+  'windows' || 'macos' || 'linux' => LucideIcons.monitor,
+  'android' || 'ios' => LucideIcons.smartphone,
+  'server' => LucideIcons.server,
+  _ => LucideIcons.server,
+};

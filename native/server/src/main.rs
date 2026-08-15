@@ -7,7 +7,6 @@
 //! 运行：`cargo run -p fluxdown_server`（环境变量见 [`config`] 模块文档）。
 
 mod actor;
-mod analytics;
 mod config;
 mod demo;
 mod host;
@@ -210,32 +209,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .manager
         .take_retry_rx()
         .ok_or("take_retry_rx returned None (already taken)")?;
-    let resolve_rx = engine
-        .manager
-        .take_resolve_rx()
-        .ok_or("take_resolve_rx returned None (already taken)")?;
-    let plugin_retry_rx = engine
-        .manager
-        .take_plugin_retry_rx()
-        .ok_or("take_plugin_retry_rx returned None (already taken)")?;
-
     let db_handle = engine.db.clone();
     let selector_handle = engine.selector.clone();
-    let plugin_manager = engine.manager.plugin_manager();
     // 组件 API（ffmpeg 探测/安装）不走 actor，直接持 Db + data_dir；取自
     // engine 而非局部 data_dir，保持与引擎内部解析结果一致（含 override）。
     let engine_data_dir = engine.data_dir.clone();
 
     // actor 独占 engine；HTTP 层经 cmd_tx 写入。
     let (cmd_tx, cmd_rx) = mpsc::channel::<ActorCmd>(64);
-    tokio::spawn(run_actor(
-        engine,
-        cmd_rx,
-        done_rx,
-        retry_rx,
-        resolve_rx,
-        plugin_retry_rx,
-    ));
+    tokio::spawn(run_actor(engine, cmd_rx, done_rx, retry_rx));
 
     // 本地设备互联（P2P 局域网配对 + mDNS 发现 + 直连传输）。
     // 广播端口 = FLUXDOWN_BIND 的端口；FLUXDOWN_MDNS=off 时不主动广播（仍可手动配对）。
@@ -333,8 +315,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     // 匿名统计（首次部署/每日活跃；不含任何下载任务信息）。
-    // FLUXDOWN_ANALYTICS=off 或未配置 App-Key 时内部自行退出。
-    tokio::spawn(analytics::run(db_handle.clone(), SERVER_VERSION));
 
     // Tracker 订阅启动自动刷新：启用且缓存超过刷新周期未更新时，后台拉取一次
     // （镜像桌面 download_actor 的启动自刷新；不阻塞 serve）。
@@ -435,8 +415,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         hub.clone(),
         server_cfg.demo_url.clone(),
         server_cfg.language.clone(),
-        plugin_manager,
-        engine_data_dir.clone(),
         link_mgr,
     ));
     if let Some(url) = &server_cfg.demo_url {

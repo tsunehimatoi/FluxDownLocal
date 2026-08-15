@@ -18,11 +18,8 @@ import type {
   FsListResponse,
   GroupDto,
   InstallFfmpegRequest,
-  InstalledPlugin,
   LogsResponse,
-  MarketEntry,
   PingInfo,
-  PluginDto,
   ProxyTestRequest,
   ProxyTestResponse,
   QueueDto,
@@ -224,40 +221,6 @@ export const api = {
     apiFetch<WebhookTestResponse>('/api/v1/webhooks/test', {
       method: 'POST',
       body: JSON.stringify(endpoint),
-    }),
-
-  listPlugins: () => apiFetch<PluginDto[]>('/api/v1/plugins'),
-  installPlugin: (zip: File | Blob | ArrayBuffer) =>
-    apiFetch<InstalledPlugin>('/api/v1/plugins/install', {
-      method: 'POST',
-      body: zip,
-      headers: { 'Content-Type': 'application/octet-stream' },
-    }),
-  installPluginDev: (dirPath: string) =>
-    apiFetch<InstalledPlugin>('/api/v1/plugins/install-dev', {
-      method: 'POST',
-      body: JSON.stringify({ dirPath }),
-    }),
-  setPluginEnabled: (identity: string, enabled: boolean) =>
-    apiFetch<unknown>(`/api/v1/plugins/${identity}/enabled`, {
-      method: 'PUT',
-      body: JSON.stringify({ enabled }),
-    }),
-  updatePluginSettings: (identity: string, entries: Record<string, string>) =>
-    apiFetch<unknown>(`/api/v1/plugins/${identity}/settings`, {
-      method: 'PUT',
-      body: JSON.stringify(entries),
-    }),
-  uninstallPlugin: (identity: string) =>
-    apiFetch<unknown>(`/api/v1/plugins/${identity}`, { method: 'DELETE' }),
-  ignorePluginRetry: (taskId: string) =>
-    apiFetch<unknown>(`/api/v1/tasks/${taskId}/ignore-plugin-retry`, { method: 'POST' }),
-
-  listMarket: () => apiFetch<MarketEntry[]>('/api/v1/market'),
-  installFromMarket: (pluginId: string) =>
-    apiFetch<InstalledPlugin>('/api/v1/market/install', {
-      method: 'POST',
-      body: JSON.stringify({ pluginId }),
     }),
 
   getFfmpegStatus: () => apiFetch<ComponentFfmpegStatus>('/api/v1/components/ffmpeg'),

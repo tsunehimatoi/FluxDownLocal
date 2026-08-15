@@ -30,6 +30,7 @@
 
 import { browser } from 'wxt/browser';
 import { defineBackground } from 'wxt/utils/define-background';
+import { toolbarIcon } from "@/utils/icon-manager";
 import {
   sendDownloadRequest,
   sendBatchDownloadRequest,
@@ -52,22 +53,6 @@ import type {
 import { loadSettings, shouldIntercept } from "@/utils/settings";
 import type { DownloadItemInfo } from "@/utils/settings";
 import { initI18n, t } from "@/utils/i18n";
-import {
-  matchSniffRule,
-  classifyResource,
-  extractFilenameFromUrl,
-} from "@/utils/resource-types";
-import type { ResourceMessagePayload } from "@/utils/resource-types";
-import type { DashManifest } from "@/utils/dash-manifest";
-import {
-  addResources,
-  addSniffedResource,
-  getResourcesForTab,
-  getResourceCountForTab,
-  clearResourcesForTab,
-  updateBadgeForTab,
-  initTabLifecycleListeners,
-} from "@/utils/resource-store";
 
 // ===== 统计相关 =====
 interface DailyStats {
@@ -155,7 +140,7 @@ export default defineBackground(() => {
       // 设置变更时同步更新图标和下载 UI 隐藏状态
       getCachedSettings()
         .then((s) => {
-          updateIcon(s.enabled);
+          void toolbarIcon.setEnabled(s.enabled);
           syncDownloadShelfState(s.enabled);
         })
         .catch(() => {});
@@ -191,7 +176,7 @@ export default defineBackground(() => {
   // R5-8 修复：加 .catch 防止 loadSettings 失败产生未捕获 rejection 警告
   getCachedSettings()
     .then((s) => {
-      updateIcon(s.enabled);
+      void toolbarIcon.setEnabled(s.enabled);
       // 同类产品（IDM/Motrix/FDM）共同使用的策略：启动时立即隐藏下载 UI
       syncDownloadShelfState(s.enabled);
       console.log("[FluxDown] Settings cache warmed up");
@@ -211,22 +196,6 @@ export default defineBackground(() => {
     .catch((e) => {
       console.warn("[FluxDown] i18n init failed (non-fatal):", e);
     });
-
-  // 初始化 tab 生命周期监听器（自动清理关闭/导航的 tab 资源）
-  initTabLifecycleListeners();
-
-  // ===== DASH manifest tab 级存储（权威清晰度 + 轨道 URL，仿 resource-store）=====
-  // 每 tab 只保留最新一份：manifest 是页面当前播放内容的完整清晰度列表，
-  // 旧的一份在新 manifest 到达后已无参考价值（不同分片会话失效）。
-  const tabDashManifests = new Map<number, DashManifest>();
-  browser.tabs.onRemoved.addListener((tabId) => {
-    tabDashManifests.delete(tabId);
-  });
-  browser.tabs.onUpdated.addListener((tabId, changeInfo) => {
-    if (changeInfo.status === "loading" && changeInfo.url) {
-      tabDashManifests.delete(tabId);
-    }
-  });
 
   // ===== 右键菜单：即使关闭自动拦截也可以手动发送链接到 FluxDown 下载 =====
 
@@ -331,7 +300,7 @@ export default defineBackground(() => {
     await browser.storage.sync.set({
       settings: { ...settings, enabled: newEnabled },
     });
-    updateIcon(newEnabled);
+    void toolbarIcon.setEnabled(newEnabled);
     syncDownloadShelfState(newEnabled);
     // 通知用户当前状态
     notify(
@@ -693,31 +662,6 @@ export default defineBackground(() => {
         // 60 秒后自动清理
         setTimeout(() => responseDownloadCache.delete(details.url), 60_000);
 
-        // 同时将 main_frame 下载资源加入嗅探面板
-        // （资源嗅探层只监听 media/xhr/object/other，main_frame 会绕过它；
-        //  responseDownloadCache 服务于下载拦截，不受嗅探开关影响，仅面板入口受控）
-        if (
-          details.tabId >= 0 &&
-          !(_settingsCache && !_settingsCache.resourceSniffing)
-        ) {
-          // 从 requestHeaderCache 提取该请求的认证信息，随资源一起持久存储
-          const { cookies: mainCookies, headers: mainHeaders } =
-            extractAuthFromCache(details.url);
-          const added = addSniffedResource(
-            details.tabId,
-            details.url,
-            contentType,
-            contentLength,
-            dispositionFilename,
-            isAttachment,
-            mainCookies,
-            mainHeaders,
-          );
-          if (added > 0) {
-            updateBadgeForTab(details.tabId);
-            notifyContentScript(details.tabId);
-          }
-        }
       },
       { urls: ["<all_urls>"] },
       ["responseHeaders"],
@@ -730,133 +674,6 @@ export default defineBackground(() => {
     );
   }
 
-  // ==========================================
-  // 资源嗅探层：监听所有 media / XHR 类型请求的响应头
-  // 检测可下载的媒体资源，加入资源列表供 UI 展示
-  // ==========================================
-  try {
-    browser.webRequest.onHeadersReceived.addListener(
-      (details) => {
-        // 跳过无效或非 tab 请求
-        if (details.tabId < 0 || !details.responseHeaders) return;
-
-        // 资源嗅探开关：关闭时丢弃（缓存冷启动为 null 时放行，避免同步路径丢事件）
-        if (_settingsCache && !_settingsCache.resourceSniffing) return;
-
-        // 跳过非成功响应（重定向、客户端/服务器错误）
-        if (details.statusCode < 200 || details.statusCode >= 400) return;
-
-        let contentType = "";
-        let contentLength = -1;
-        let contentDisposition = "";
-
-        for (const h of details.responseHeaders) {
-          const name = h.name.toLowerCase();
-          if (name === "content-type" && h.value) {
-            contentType = h.value.split(";")[0].trim().toLowerCase();
-          } else if (name === "content-length" && h.value) {
-            const parsed = parseInt(h.value, 10);
-            if (!isNaN(parsed)) contentLength = parsed;
-          } else if (name === "content-disposition" && h.value) {
-            contentDisposition = h.value;
-          }
-        }
-
-        // 判断是否是有价值的资源
-        const isAttachment = contentDisposition
-          .toLowerCase()
-          .startsWith("attachment");
-        const ruleMatch = matchSniffRule(
-          details.url,
-          contentType,
-          contentLength,
-        );
-
-        // 规则显式拦截（禁用/黑名单/小于最小大小）→ 丢弃
-        if (ruleMatch.blocked) return;
-        // 既非规则命中、又非附件 → 丢弃
-        if (!ruleMatch.hit && !isAttachment) return;
-
-        // 提取文件名
-        let filename = "";
-        if (contentDisposition) {
-          filename = parseContentDispositionFilename(contentDisposition);
-        }
-        if (!filename) {
-          filename = extractFilenameFromUrl(details.url);
-        }
-
-        // 从 requestHeaderCache 提取该请求的认证信息（Cookie / Authorization 等），
-        // 随资源一起持久存储到 resource-store。
-        // 确保用户稍后从资源面板点击下载时，即使 requestHeaderCache 已过期，
-        // 仍能携带正确的认证头发送给 FluxDown——这是 IDM 能成功而普通插件失败的关键。
-        const { cookies: sniffCookies, headers: sniffHeaders } =
-          extractAuthFromCache(details.url);
-
-        // 添加到资源存储（传递 isAttachment + cookies/headers 用于后续下载）
-        const added = addSniffedResource(
-          details.tabId,
-          details.url,
-          contentType,
-          contentLength,
-          filename,
-          isAttachment,
-          sniffCookies,
-          sniffHeaders,
-        );
-
-        if (added > 0) {
-          // 更新 Badge
-          updateBadgeForTab(details.tabId);
-          // 推送给 Content Script UI
-          notifyContentScript(details.tabId);
-        }
-      },
-      {
-        urls: ["<all_urls>"],
-        types: ["media", "xmlhttprequest", "object", "other", "sub_frame"],
-      },
-      ["responseHeaders"],
-    );
-    console.log(
-      "[FluxDown] Resource sniffer (onHeadersReceived for media) registered",
-    );
-  } catch (e) {
-    console.warn("[FluxDown] Failed to register resource sniffer:", e);
-  }
-
-  /**
-   * 向指定 tab 的 Content Script 推送最新资源列表
-   */
-  async function notifyContentScript(tabId: number): Promise<void> {
-    const resources = getResourcesForTab(tabId);
-    try {
-      await browser.tabs.sendMessage(tabId, {
-        action: "resourcesUpdated",
-        resources,
-      });
-    } catch {
-      // Content script 可能还未注入
-    }
-  }
-
-  /**
-   * 向指定 tab 的 Content Script 推送最新 DASH manifest（权威清晰度 + 轨道 URL）
-   */
-  async function notifyDashManifest(tabId: number): Promise<void> {
-    const manifest = tabDashManifests.get(tabId);
-    if (!manifest) return;
-    try {
-      await browser.tabs.sendMessage(tabId, {
-        action: "dashManifestUpdated",
-        manifest,
-      });
-    } catch {
-      // Content script 可能还未注入
-    }
-  }
-
-  // ==========================================
   // 第二层 + 第三层：下载事件拦截
   // ==========================================
 
@@ -864,11 +681,6 @@ export default defineBackground(() => {
   const handledDownloads = new Map<number, "primary" | "fallback">();
   // Alt+Click 绕过令牌：URL → 过期时间戳，15 秒内有效
   const bypassTokens = new Map<string, number>();
-  // 预抢占 URL 表：URL → {expiry: 过期时间戳, ruleId: DNR 规则 ID}
-  // 当 AJAX 拦截器在浏览器发起 CDN GET 之前检测到一次性下载 URL 时填入。
-  // onDeterminingFilename 检查此表，避免重复发送给 FluxDown。
-  const preemptedUrls = new Map<string, { expiry: number }>();
-
   // Bug R3-2 修复：周期性清理 bypassTokens 中的过期条目，防止长期积累内存泄漏
   setInterval(() => {
     const now = Date.now();
@@ -1518,32 +1330,6 @@ export default defineBackground(() => {
           return;
         }
 
-        // 预抢占 URL 检查：该 URL 已由 AJAX 拦截器检测为蓝奏云等中转页 URL。
-        // 中转页 URL 可能 302 重定向到真实文件 URL。如果 finalUrl 与原始 URL 不同，
-        // 说明重定向已发生，使用 finalUrl 正常拦截。如果相同，放行让浏览器处理。
-        const preemptEntry = preemptedUrls.get(url);
-        if (preemptEntry && preemptEntry.expiry > Date.now()) {
-          if (downloadUrl === url) {
-            // 未发生重定向 — 放行让浏览器继续下载（CDN 中转页或直传）
-            console.log(
-              "[FluxDown] onDeterminingFilename: preempted URL, no redirect detected, letting browser handle:",
-              url,
-            );
-            handledDownloads.delete(downloadItem.id);
-            suggest(
-              downloadItem.filename
-                ? { filename: downloadItem.filename }
-                : (undefined as any),
-            );
-            return;
-          }
-          // 发生重定向 — finalUrl 是真实文件 URL，继续走正常拦截流程
-          console.log(
-            "[FluxDown] onDeterminingFilename: preempted URL redirected, intercepting finalUrl:",
-            downloadUrl,
-          );
-        }
-
         // P0 关键修复：立即预标记为 'primary-pending'，
         // 阻止第三层（onCreated 兜底计时器）在我们异步处理期间竞态抢先执行。
         // 若最终判断不需拦截，在放行时删除此标记。
@@ -2145,7 +1931,30 @@ export default defineBackground(() => {
   const TASK_POLL_ALARM_PERIOD_MIN = 0.1;
   // 判定"活跃"的任务状态：0=pending, 1=downloading, 5=preparing。
   const ACTIVE_TASK_STATUSES = new Set([0, 1, 5]);
+  const TASK_STATUS_DOWNLOADING = 1;
+  const TASK_STATUS_PAUSED = 2;
   const TASK_STATUS_COMPLETED = 3;
+  const TASK_STATUS_ERROR = 4;
+  const TASK_STATUS_PREPARING = 5;
+
+  /** 同步动态图标状态；角标仍只显示真正处于 downloading 状态的任务数。 */
+  async function updateToolbarTaskState(tasks: TaskBrief[]): Promise<void> {
+    const downloading = tasks.filter(
+      (task) => task.status === TASK_STATUS_DOWNLOADING,
+    );
+    const progressTasks = downloading.filter((task) => task.totalBytes > 0);
+    const totalBytes = progressTasks.reduce((sum, task) => sum + task.totalBytes, 0);
+    const downloadedBytes = progressTasks.reduce(
+      (sum, task) => sum + Math.min(task.downloadedBytes, task.totalBytes),
+      0,
+    );
+    await toolbarIcon.setTaskState({
+      downloadingCount: downloading.length,
+      pausedCount: tasks.filter((task) => task.status === TASK_STATUS_PAUSED).length,
+      preparingCount: tasks.filter((task) => task.status === TASK_STATUS_PREPARING).length,
+      progress: totalBytes > 0 ? downloadedBytes / totalBytes : null,
+    });
+  }
 
   async function ensureTaskPollAlarm(): Promise<void> {
     try {
@@ -2171,6 +1980,10 @@ export default defineBackground(() => {
   function maybeArmTaskPollForChannel(channel?: "local" | "remote"): void {
     if (channel === "remote") return;
     ensureTaskPollAlarm().catch(() => {});
+    // 新任务投递后尽快刷新角标，不等待 Chrome 正式包最低 30s 的 alarm 周期。
+    for (const delay of [500, 1500, 3000]) {
+      setTimeout(() => refreshTasksFromApp().catch(() => {}), delay);
+    }
   }
 
   // 任务状态快照（taskId → 上次已知 status），用于 diff 出"上次非完成 →
@@ -2298,9 +2111,11 @@ export default defineBackground(() => {
   async function processTasksPollResultInner(
     tasks: TaskBrief[],
   ): Promise<void> {
+    await updateToolbarTaskState(tasks);
     const prevSnapshot = await loadTaskSnapshot();
     const nextSnapshot: Record<string, number> = {};
     const newlyCompleted: TaskBrief[] = [];
+    const newlyFailed: TaskBrief[] = [];
 
     for (const task of tasks) {
       nextSnapshot[task.taskId] = task.status;
@@ -2312,8 +2127,19 @@ export default defineBackground(() => {
       ) {
         newlyCompleted.push(task);
       }
+      if (
+        prevStatus !== undefined &&
+        prevStatus !== TASK_STATUS_ERROR &&
+        task.status === TASK_STATUS_ERROR
+      ) {
+        newlyFailed.push(task);
+      }
     }
     persistTaskSnapshot(nextSnapshot);
+
+    // 结果动画优先于持续下载/暂停动画；失败优先，播放完自动回到当前任务状态。
+    if (newlyFailed.length > 0) toolbarIcon.playResult("error");
+    else if (newlyCompleted.length > 0) toolbarIcon.playResult("complete");
 
     if (newlyCompleted.length > 0) {
       const settings = await loadSettings();
@@ -2346,17 +2172,24 @@ export default defineBackground(() => {
     return _taskSnapshotChain;
   }
 
+  async function refreshTasksFromApp(): Promise<void> {
+    const result = await nmhListTasks();
+    if (!result.success) {
+      await updateToolbarTaskState([]);
+      return;
+    }
+    await processTasksPollResult(result.tasks);
+  }
+
   browser.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== TASK_POLL_ALARM_NAME) return;
-    nmhListTasks()
-      .then((result) => {
-        if (!result.success) return; // App 暂不可达，等下一轮
-        return processTasksPollResult(result.tasks);
-      })
-      .catch((e) => {
-        console.warn("[FluxDown] task poll alarm handler failed:", e);
-      });
+    refreshTasksFromApp().catch((e) => {
+      console.warn("[FluxDown] task poll alarm handler failed:", e);
+    });
   });
+
+  // Service Worker 每次启动都立即同步一次，避免浏览器保留上次会话的旧角标。
+  refreshTasksFromApp().catch(() => updateToolbarTaskState([]));
 
   // ===== fluxdown:// 自定义协议投递 =====
   // Android 浏览器（Edge/Firefox/Kiwi 等支持扩展的内核）没有 NMH，
@@ -2519,15 +2352,11 @@ export default defineBackground(() => {
       }
     }
 
-    // 策略 3：使用资源存储中保存的请求头信息（最终兜底）
-    // 资源嗅探时从 webRequest 捕获的 Cookie/Authorization 等认证信息，
-    // 即使 requestHeaderCache 已过期（60s）、cookies API 也未能提取到，
-    // 仍可从 resource-store 持久存储中恢复。
-    // 这是解决"PDF 无权限"等认证丢失问题的关键路径。
+    // 调用方可附带已捕获的 Cookie/Authorization 作为最终兜底。
     if (!cookieString && storedCookies) {
       cookieString = storedCookies;
       console.log(
-        "[FluxDown] Cookies from stored resource:",
+        "[FluxDown] Cookies from caller metadata:",
         cookieString.length,
         "chars",
       );
@@ -2539,7 +2368,7 @@ export default defineBackground(() => {
     ) {
       extraHeaders = storedHeaders;
       console.log(
-        "[FluxDown] Extra headers from stored resource:",
+        "[FluxDown] Extra headers from caller metadata:",
         Object.keys(extraHeaders).length,
       );
     }
@@ -2728,6 +2557,7 @@ export default defineBackground(() => {
       case "nmh-tasks": {
         const result = await nmhListTasks();
         if (!result.success) {
+          await updateToolbarTaskState([]);
           return { ok: false, connected: false, tasks: [] };
         }
         await processTasksPollResult(result.tasks);
@@ -2787,7 +2617,7 @@ export default defineBackground(() => {
         await browser.storage.sync.set({
           settings: { ...currentSettings, enabled: newEnabled },
         });
-        updateIcon(newEnabled);
+        void toolbarIcon.setEnabled(newEnabled);
         return { enabled: newEnabled };
       }
 
@@ -2823,59 +2653,6 @@ export default defineBackground(() => {
         return { success: true };
       }
 
-      // --- Content Script: 资源检测上报 ---
-      case "resourceDetected": {
-        const tabId = sender.tab?.id;
-        if (!tabId || tabId < 0) return { success: false };
-
-        const pageUrl = sender.tab?.url || sender.url || "";
-        const payloads: ResourceMessagePayload[] = message.resources || [];
-
-        if (payloads.length === 0) return { success: true, added: 0 };
-
-        // 资源嗅探开关：关闭时丢弃上报（旧页面的 content script 可能仍在运行）
-        const rdSettings = await getCachedSettings();
-        if (!rdSettings.resourceSniffing) return { success: true, added: 0 };
-
-        const added = addResources(tabId, pageUrl, payloads);
-        if (added > 0) {
-          await updateBadgeForTab(tabId);
-          await notifyContentScript(tabId);
-        }
-        return { success: true, added };
-      }
-
-      // --- Content Script: DASH manifest 检测上报（权威清晰度 + 轨道 URL）---
-      case "dashManifestDetected": {
-        const tabId = sender.tab?.id;
-        if (!tabId || tabId < 0) return { success: false };
-
-        // 资源嗅探开关：关闭时丢弃（旧页面的 fetch 拦截脚本可能仍在运行）
-        const dmSettings = await getCachedSettings();
-        if (!dmSettings.resourceSniffing) return { success: false };
-        const manifest = message.manifest as DashManifest | undefined;
-        if (!manifest || (!manifest.video?.length && !manifest.audio?.length)) {
-          return { success: false };
-        }
-        tabDashManifests.set(tabId, manifest);
-        await notifyDashManifest(tabId);
-        return { success: true };
-      }
-
-      // --- Content Script UI / Popup: 请求指定 tab 的资源列表（含权威 DASH manifest，若已嗅探到）---
-      // content script 有 sender.tab 且优先生效；popup/options 等扩展页无 sender.tab，
-      // 显式传 message.tabId（自查 tabs.query 的活跃 tab）。
-      case "getResources": {
-        const tabId =
-          sender.tab?.id ??
-          (typeof message.tabId === "number" ? message.tabId : -1);
-        if (!tabId || tabId < 0) return { resources: [], dashManifest: null };
-        return {
-          resources: getResourcesForTab(tabId),
-          dashManifest: tabDashManifests.get(tabId) ?? null,
-        };
-      }
-
       // --- Content Script UI / Popup: 触发单个资源下载 ---
       case "downloadResource": {
         const url = message.url as string;
@@ -2883,29 +2660,7 @@ export default defineBackground(() => {
         const dlSettings = await getCachedSettings();
         if (!dlSettings.enabled)
           return { success: false, message: "Extension disabled" };
-        // 从资源存储中查找匹配的资源，获取嗅探时保存的 cookies/headers/fileSize。
-        // 用户从资源面板点击下载时，原始请求的 requestHeaderCache 可能已过期，
-        // 必须依赖持久存储的认证信息才能成功下载需要认证的资源（如政务站点 PDF）。
-        const dlTabId = sender.tab?.id;
-        let resCookies: string | undefined;
-        let resHeaders: Record<string, string> | undefined;
-        let resFileSize: number | undefined;
-        if (dlTabId && dlTabId >= 0) {
-          const tabRes = getResourcesForTab(dlTabId);
-          const matched = tabRes.find((r) => r.url === url);
-          if (matched) {
-            resCookies = matched.cookies;
-            resHeaders = matched.headers;
-            resFileSize = matched.size > 0 ? matched.size : undefined;
-          }
-        }
-        // IDM/NDM 策略：对于从资源面板 / 嗅探触发的下载，必须跳过 probe。
-        // 一次性 token URL（如 ctbpsp.com）的 token 已被浏览器消费，
-        // probe（HEAD + GET Range:0-0）会再次请求导致 token 失效返回 HTML。
-        // fileSize > 0 → 已知大小，跳过 probe
-        // fileSize = -1 → 大小未知但确认是下载资源，跳过 probe
-        // fileSize = 0/undefined → 正常 probe（仅限手动添加的 URL）
-        const effectiveFileSize = message.fileSize || resFileSize || -1;
+        const effectiveFileSize = message.fileSize || -1;
         await sendToFluxDown(
           url,
           message.referrer,
@@ -2913,10 +2668,8 @@ export default defineBackground(() => {
           effectiveFileSize,
           message.mimeType,
           undefined,
-          resCookies,
-          resHeaders,
-          // 离散音视频轨对：内容脚本清晰度选择小窗传来的音频轨 URL（可选）。
-          message.audioUrl as string | undefined,
+          undefined,
+          undefined,
         );
         return { success: true };
       }
@@ -2974,11 +2727,6 @@ export default defineBackground(() => {
         // Bug 9 修复：cookies API 加 500ms 超时，与 sendToFluxDown 保持一致
         // Bug R4-6 修复：并发提取所有 URL 的 cookies，避免串行 N×500ms 超时
         // 需要排除的浏览器内部头（Cookie 已单独处理）
-        // 预加载当前 tab 的资源列表，用于 cookies/headers 兜底查找
-        const batchTabId = sender.tab?.id;
-        const batchTabResources =
-          batchTabId && batchTabId >= 0 ? getResourcesForTab(batchTabId) : [];
-
         const batchItems: BatchDownloadItem[] = await Promise.all(
           items.map(async (item) => {
             // 策略 1：从 webRequest 缓存获取认证信息
@@ -3001,24 +2749,6 @@ export default defineBackground(() => {
                   .join("; ");
               } catch {
                 /* timeout 或权限不足，跳过 */
-              }
-            }
-            // 策略 3：从资源存储中恢复认证信息（兜底）
-            if (!cookieString || Object.keys(extraHeaders).length === 0) {
-              const matchedRes = batchTabResources.find(
-                (r) => r.url === item.url,
-              );
-              if (matchedRes) {
-                if (!cookieString && matchedRes.cookies) {
-                  cookieString = matchedRes.cookies;
-                }
-                if (
-                  Object.keys(extraHeaders).length === 0 &&
-                  matchedRes.headers &&
-                  Object.keys(matchedRes.headers).length > 0
-                ) {
-                  extraHeaders = matchedRes.headers;
-                }
               }
             }
             return {
@@ -3053,49 +2783,6 @@ export default defineBackground(() => {
           }
         }
         return { success: response.success, sent: items.length };
-      }
-
-      // --- Popup: 切换资源面板显示（发消息给当前活跃 tab 的 Content Script） ---
-      case "toggleResourcePanel": {
-        try {
-          const [activeTab] = await browser.tabs.query({
-            active: true,
-            currentWindow: true,
-          });
-          if (activeTab?.id) {
-            await browser.tabs.sendMessage(activeTab.id, {
-              action: "toggleResourcePanel",
-            });
-          }
-        } catch {
-          // tab 可能未注入 content script
-        }
-        return { success: true };
-      }
-
-      // --- Content Script: 预抢占一次性 CDN 下载 URL ---
-      // 蓝奏云等网站的 CDN URL 实际是 HTML 中转页，需要浏览器加载执行 JS
-      // 才能获取真正的下载 URL。因此不再发送给 FluxDown，仅记录 URL 做去重。
-      // 当中转页 JS 触发真正的文件下载时，常规下载拦截机制会自动捕获。
-      case "preemptDownload": {
-        const preemptUrl = message.url as string;
-        if (!preemptUrl || typeof preemptUrl !== "string")
-          return { error: "invalid url" };
-
-        // 记录预抢占 URL，防止 onDeterminingFilename 重复发送
-        preemptedUrls.set(preemptUrl, { expiry: Date.now() + 30_000 });
-
-        console.log(
-          "[FluxDown] preemptDownload: recorded URL (not sent to FluxDown, browser will load transit page):",
-          preemptUrl,
-        );
-
-        // 30 秒后清理预抢占记录
-        setTimeout(() => {
-          preemptedUrls.delete(preemptUrl);
-        }, 30_000);
-
-        return { success: true };
       }
 
       default:
@@ -3421,19 +3108,5 @@ export default defineBackground(() => {
     }
   }
 
-  function updateIcon(enabled: boolean) {
-    const suffix = enabled ? "" : "-disabled";
-    const iconPath = {
-      16: `/icon/16${suffix}.png`,
-      32: `/icon/32${suffix}.png`,
-      48: `/icon/48${suffix}.png`,
-      128: `/icon/128${suffix}.png`,
-    };
-    browser.action?.setIcon({ path: iconPath })?.catch(() => {
-      /* 权限不足时静默忽略 */
-    });
-  }
-
-  // 启动时更新图标（settings 已在上方 getCachedSettings 预热，此处复用缓存）
-  // 注意：updateIcon 已在 getCachedSettings 预热回调中调用，此行保留为显式确保
+  // 启动时的图标状态由上方 settings 预热和任务状态刷新统一提交给 toolbarIcon。
 });

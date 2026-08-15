@@ -21,9 +21,6 @@ class _FakeHost implements QuickDownloadFormHost {
   List<QuickQueueOption> get queues => const [];
 
   @override
-  List<QuickDeviceOption> get devices => const [];
-
-  @override
   int get defaultSegments => 0;
 
   @override
@@ -60,15 +57,13 @@ Widget _wrapForm(QuickDownloadForm form) {
                 color: theme.colorScheme.primary,
                 debugShowCheckedModeBanner: false,
                 home: SingleChildScrollView(child: form),
-                pageRouteBuilder: <T>(
-                  RouteSettings settings,
-                  WidgetBuilder builder,
-                ) {
-                  return PageRouteBuilder<T>(
-                    settings: settings,
-                    pageBuilder: (context, _, _) => builder(context),
-                  );
-                },
+                pageRouteBuilder:
+                    <T>(RouteSettings settings, WidgetBuilder builder) {
+                      return PageRouteBuilder<T>(
+                        settings: settings,
+                        pageBuilder: (context, _, _) => builder(context),
+                      );
+                    },
               ),
             ),
           ),
@@ -83,9 +78,8 @@ TextEditingController _urlBox(WidgetTester tester) =>
     tester.widget<TextField>(find.byType(TextField)).controller!;
 
 /// 认证密码框 — 表单里唯一 obscureText 的 [ShadInput]。
-Finder get _passInput => find.byWidgetPredicate(
-  (w) => w is ShadInput && w.obscureText,
-);
+Finder get _passInput =>
+    find.byWidgetPredicate((w) => w is ShadInput && w.obscureText);
 
 /// 认证用户名框 — 密码框所在 Row 里的另一个 [ShadInput]（按控制器文本
 /// 无法定位空值场景，改用与密码框同 Row 的结构关系）。
@@ -127,9 +121,7 @@ Future<void> _setUrl(WidgetTester tester, String url) async {
 }
 
 void main() {
-  testWidgets('命中站点自动回填，切换 URL 跟随更新/清空，开关不被拨动', (
-    tester,
-  ) async {
+  testWidgets('命中站点自动回填，切换 URL 跟随更新/清空，开关不被拨动', (tester) async {
     await _pumpForm(tester);
     expect(_text(tester, _userInput), '');
     expect(_text(tester, _passInput), '');
@@ -156,9 +148,7 @@ void main() {
     // 「为此网站保存」（及其他）开关全程未被拨动
     expect(
       tester.widgetList<ShadSwitch>(find.byType(ShadSwitch)),
-      everyElement(
-        isA<ShadSwitch>().having((w) => w.value, 'value', false),
-      ),
+      everyElement(isA<ShadSwitch>().having((w) => w.value, 'value', false)),
     );
   });
 

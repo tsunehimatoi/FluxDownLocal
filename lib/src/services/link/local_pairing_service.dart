@@ -1,7 +1,5 @@
-// FluxDown 本地设备互联（局域网配对）客户端服务 —— 单例 + ChangeNotifier
-// （同 CloudAuthService/RemoteTaskService 的单例风格）。
-//
-// 与 FluxCloud 账户体系无关：不登录账号，双方在同一局域网内即可直接配对，
+// FluxDown 本地设备互联（局域网配对）客户端服务 —— 单例 + ChangeNotifier。
+// 不登录账号，双方在同一局域网内即可直接配对，
 // 数据面/控制面均走 Rust 端 LinkManager（native/engine/src/link/），本服务
 // 只负责：
 //   - 发 LinkCommand（发现/探测/配对/名册管理）；
@@ -24,8 +22,7 @@ import 'link_models.dart';
 
 const _tag = 'LocalPairing';
 
-/// 本地设备互联服务单例。宿主页面在 providers 就绪后调 [attach] 一次
-/// （同 RemoteTaskService.attach 的接线时机）。
+/// 本地设备互联服务单例。宿主页面在 providers 就绪后调 [attach] 一次。
 class LocalPairingService extends ChangeNotifier {
   LocalPairingService._();
 

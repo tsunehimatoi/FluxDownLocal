@@ -13,7 +13,6 @@ pub mod rinf_selection;
 mod rinf_sink;
 mod signal_bridge;
 mod signals;
-mod updater;
 
 use actors::create_actors;
 use rinf::{dart_shutdown, write_interface};

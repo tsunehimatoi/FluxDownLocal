@@ -272,7 +272,6 @@ export function ManifestSelectDialog() {
                     · <LinkIcon size={10} /> {sourceHost}
                   </span>
                 )}
-                <span className="mf-badge">{t('manifest.pluginBadge')}</span>
               </div>
             </div>
             <Dialog.Close asChild>

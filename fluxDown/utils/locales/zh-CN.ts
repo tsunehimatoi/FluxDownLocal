@@ -32,7 +32,6 @@ const zhCN = {
   "settings.interceptMagnet": "接管磁力链接",
   "settings.interceptMagnetHint": "关闭后交给系统默认磁力程序（如 qBittorrent）",
   "settings.altClickHint": "Alt+Shift+D 切换拦截",
-  "settings.dotVisible": "悬浮球",
 
   // Remote download source
   "remote.title": "远程下载源",
@@ -139,52 +138,6 @@ const zhCN = {
   "notify.appUnavailableDetail":
     "已暂时改用浏览器自带下载。请确认 FluxDown 桌面端已启动，稍后将自动恢复接管。",
 
-  // Resource sniffer & panel
-  "sniffer.title": "资源嗅探",
-  "sniffer.resourceSniffing": "资源嗅探",
-  "sniffer.resourceSniffingHint": "检测网页中的可下载资源，关闭即隐藏页面内下载按钮（重新开启需刷新）",
-  "sniffer.showFloatingButton": "视频浮动按钮",
-  "sniffer.showFloatingButtonHint": "在视频元素上显示快速下载按钮",
-  "sniffer.showResourcePanel": "资源面板",
-  "sniffer.showResourcePanelHint": "页面底部显示检测到的资源列表",
-  "sniffer.sniffImages": "图片嗅探",
-  "sniffer.sniffImagesHint": "检测网页中的大图片资源（>100KB）",
-
-  // Resource panel (content script)
-  "panel.selectAll": "全选",
-  "panel.batchDownload": "批量下载",
-  "panel.resources": "个资源",
-  "panel.empty": "暂未检测到可下载资源",
-  "panel.collapse": "收起",
-  "panel.more": "其他 {count} 项",
-  "panel.hideDot": "隐藏悬浮球",
-  "panel.download": "下载",
-  "panel.floatDL": "下载",
-  "panel.tabAll": "全部",
-  "panel.tabVideo": "视频",
-  "panel.tabAudio": "音频",
-  "panel.tabDocs": "文档",
-  "panel.tabArchive": "压缩包",
-  "panel.tabStream": "流媒体",
-  "panel.tabSubtitle": "字幕",
-  "panel.tabMagnet": "磁力",
-  "panel.tabOther": "其他",
-  "panel.qualityPickerTitle": "选择清晰度",
-  "panel.trackVideo": "视频轨",
-  "panel.trackAudio": "音频轨",
-  "panel.qualityUnknown": "未知画质",
-  "panel.previewTitle": "预览",
-  "panel.previewClose": "关闭预览",
-  "panel.previewFailed": "预览加载失败，可能需要登录或存在跨域限制",
-  "panel.previewUnsupported": "该类型暂不支持预览",
-  "panel.previewFragmentUnsupported": "此分片无法独立预览，需合并后查看",
-  "panel.previewHlsUnsupported": "当前浏览器无法直接预览 HLS，请在播放页查看或下载后用播放器打开",
-  "panel.previewDashUnsupported": "当前浏览器无法直接预览此 DASH 流，请在播放页查看或下载后用播放器打开",
-  "panel.previewLimited": "预览受限",
-  "panel.previewLimitedHint": "浏览器预览受跨域/登录限制失败，但下载仍可能成功（引擎会带上登录态）",
-  "panel.clearFailed": "清理预览失败项",
-  "panel.clearFailedHint": "把预览失败的资源从列表隐藏（不影响其他资源，也不代表无法下载）",
-
   // Shortcut toggle
   "shortcut.toggleTitle": "拦截切换",
   "shortcut.interceptOn": "下载拦截已开启",
@@ -202,11 +155,7 @@ const zhCN = {
 
   // 顶部 tab（popup）
   "popup.tabs.tasks": "任务",
-  "popup.tabs.resources": "资源",
   "popup.tabs.settings": "设置",
-
-  // 资源面板（popup）
-  "popup.resources.empty": "当前页面暂未嗅探到资源",
 
   // 任务面板（popup）
   "popup.tasks.downloading": "下载中",

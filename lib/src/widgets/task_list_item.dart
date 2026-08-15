@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
@@ -18,11 +16,6 @@ import 'overflow_tooltip_text.dart';
 import '../services/open_folder.dart';
 import 'queue_manager_dialog.dart';
 import 'task_columns.dart';
-import '../services/cloud/cloud_auth_service.dart';
-import '../services/cloud/cloud_models.dart';
-
-/// 插件系统失败任务的错误消息前缀（引擎/hub/server 固定格式，逃生舱按钮据此判断）。
-const _pluginErrorPrefix = '[插件]';
 
 /// 舒适档默认列（现状硬编码 4 列，与 [ViewPrefs.defaultColumns] canonical
 /// 顺序一致），保证不接入视图系统的调用点行为不变。
@@ -48,9 +41,6 @@ class TaskListItem extends StatefulWidget {
 
   /// 修改线程数（打开对话框）。null = 不显示该菜单项。
   final VoidCallback? onEditThreads;
-
-  /// 插件钩子处理中（旁路 UI 指示，仅在 completed 状态下有意义）
-  final bool isPluginProcessing;
 
   /// 管理模式相关
   final bool isManageMode;
@@ -79,7 +69,6 @@ class TaskListItem extends StatefulWidget {
     this.isPriority = false,
     this.onBoost,
     this.onEditThreads,
-    this.isPluginProcessing = false,
     this.isManageMode = false,
     this.isChecked = false,
     this.onToggleChecked,
@@ -249,28 +238,13 @@ class _TaskListItemState extends State<TaskListItem> {
   Widget _buildFileInfo(AppColors c, AppMetrics m, bool compact) {
     final task = widget.task;
     // 已完成且文件仍在磁盘上的任务，文件图标支持拖出到资源管理器/其他应用。
-    final canDragOut =
-        task.status == TaskStatus.completed && !task.fileMissing;
+    final canDragOut = task.status == TaskStatus.completed && !task.fileMissing;
     final iconSize = _iconSize;
     Widget icon = FileTypeIconTile(
       ext: task.fileExtension,
       size: iconSize,
       borderRadius: compact ? m.brSm : m.brMd,
     );
-    // 插件（onDone 钩子）仍在处理该已完成任务：文件图标外圈旋转扫光边框，
-    // 纯旁路指示，不改变状态列布局。
-    if (task.status == TaskStatus.completed && widget.isPluginProcessing) {
-      final s = LocaleScope.of(context);
-      icon = ShadTooltip(
-        waitDuration: const Duration(milliseconds: 300),
-        builder: (_) => Text(s.pluginProcessing),
-        child: _PluginProcessingRing(
-          borderRadius: compact ? m.brSm : m.brMd,
-          color: c.accent,
-          child: icon,
-        ),
-      );
-    }
     if (canDragOut) {
       final filePath = task.filePath;
       final fileName = task.fileName;
@@ -320,10 +294,6 @@ class _TaskListItemState extends State<TaskListItem> {
                     const SizedBox(width: 6),
                     _ProtocolBadge(task: task),
                   ],
-                  if (CloudAuthService.instance.hasRemoteDevices) ...[
-                    const SizedBox(width: 6),
-                    _DeviceBadge(task: task),
-                  ],
                 ],
               ),
               if (!compact) ...[
@@ -348,10 +318,9 @@ class _TaskListItemState extends State<TaskListItem> {
   String _subtitleText() {
     final task = widget.task;
     final full = task.subtitleWith(
-      queueStopped: !(DownloadController.globalInstance?.isQueueRunning(
-            task.queueId,
-          ) ??
-          true),
+      queueStopped:
+          !(DownloadController.globalInstance?.isQueueRunning(task.queueId) ??
+              true),
     );
     if (!widget.protocolBadges) return full;
     final prefix = '${task.protocolLabel} · ';
@@ -391,74 +360,6 @@ class _ProtocolBadge extends StatelessWidget {
 }
 
 // =============================================================================
-// 设备徽标（9.5px 大写，视觉规格同协议徽标，design-proto-spec §5 `.badge`；
-// 仅 CloudAuthService.hasRemoteDevices 时由调用方渐进披露渲染）
-// =============================================================================
-
-class _DeviceBadge extends StatelessWidget {
-  final DownloadTask task;
-  const _DeviceBadge({required this.task});
-
-  /// 按 task.deviceId 在设备名册中查找对应设备（本机 deviceId 为空字符串）。
-  CloudDevice? get _matchedDevice {
-    final devices = CloudAuthService.instance.devices;
-    if (task.deviceId.isEmpty) {
-      for (final d in devices) {
-        if (d.isCurrent) return d;
-      }
-      return null;
-    }
-    for (final d in devices) {
-      if (d.deviceId == task.deviceId) return d;
-    }
-    return null;
-  }
-
-  String _label(S s) {
-    if (task.deviceId.isEmpty) return s.thisDevice;
-    return _matchedDevice?.name ?? task.deviceId;
-  }
-
-  IconData get _icon {
-    final platform = _matchedDevice?.platform;
-    return switch (platform) {
-      'windows' || 'macos' || 'linux' => LucideIcons.monitor,
-      'android' || 'ios' => LucideIcons.smartphone,
-      _ => task.deviceId.isEmpty ? LucideIcons.monitor : LucideIcons.server,
-    };
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = AppColors.of(context);
-    final s = LocaleScope.of(context);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration: BoxDecoration(
-        color: c.surface2,
-        borderRadius: const BorderRadius.all(Radius.circular(4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(_icon, size: 9, color: c.textMuted),
-          const SizedBox(width: 3),
-          Text(
-            _label(s).toUpperCase(),
-            style: TextStyle(
-              fontSize: 9.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-              color: c.textMuted,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// =============================================================================
 // 紧凑档行底进度边缘条（2px 全宽，design-proto-spec §6 `.trow-edge`）
 // =============================================================================
 
@@ -469,7 +370,11 @@ class _CompactProgressEdge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
-    final color = taskStatusColor(task.status, c, fileMissing: task.fileMissing);
+    final color = taskStatusColor(
+      task.status,
+      c,
+      fileMissing: task.fileMissing,
+    );
     return ColoredBox(
       color: c.surface3,
       child: task.isIndeterminate
@@ -515,22 +420,38 @@ class TaskHoverActionCluster extends StatelessWidget {
       case TaskStatus.preparing:
       case TaskStatus.resuming:
         buttons.add(
-          TaskActionButton(icon: LucideIcons.pause, primary: true, onTap: onPause),
+          TaskActionButton(
+            icon: LucideIcons.pause,
+            primary: true,
+            onTap: onPause,
+          ),
         );
       case TaskStatus.paused:
       case TaskStatus.error:
         buttons.add(
-          TaskActionButton(icon: LucideIcons.play, primary: true, onTap: onResume),
+          TaskActionButton(
+            icon: LucideIcons.play,
+            primary: true,
+            onTap: onResume,
+          ),
         );
       case TaskStatus.completed:
         // 做种中可暂停；做种停止后可重新开始做种。
         if (task.isSeeding) {
           buttons.add(
-            TaskActionButton(icon: LucideIcons.pause, primary: true, onTap: onPause),
+            TaskActionButton(
+              icon: LucideIcons.pause,
+              primary: true,
+              onTap: onPause,
+            ),
           );
         } else if (task.isSeedingStopped) {
           buttons.add(
-            TaskActionButton(icon: LucideIcons.play, primary: true, onTap: onResume),
+            TaskActionButton(
+              icon: LucideIcons.play,
+              primary: true,
+              onTap: onResume,
+            ),
           );
         }
       case TaskStatus.canceled:
@@ -543,7 +464,10 @@ class TaskHoverActionCluster extends StatelessWidget {
       ),
     );
     buttons.add(
-      TaskActionButton(icon: LucideIcons.moreHorizontal, onTapDown: onMoreTapDown),
+      TaskActionButton(
+        icon: LucideIcons.moreHorizontal,
+        onTapDown: onMoreTapDown,
+      ),
     );
 
     return Container(
@@ -626,7 +550,6 @@ class _TaskActionButtonState extends State<TaskActionButton> {
       ),
     );
   }
-
 }
 
 // =============================================================================
@@ -753,19 +676,6 @@ void showTaskContextMenu(
       }
     case TaskStatus.canceled:
       break; // 终态，不提供暂停/继续菜单项
-  }
-
-  // --- 忽略插件重试（逃生舱：插件解析失败任务专属）---
-  if (task.status == TaskStatus.error &&
-      task.errorMessage.startsWith(_pluginErrorPrefix)) {
-    items.add(
-      ContextMenuItem(
-        icon: LucideIcons.shieldOff,
-        label: s.taskIgnorePluginRetry,
-        color: c.textPrimary,
-        action: () => showIgnorePluginRetryDialog(context, taskId: task.id),
-      ),
-    );
   }
 
   // --- 优先下载 / 取消优先（仅对非完成任务显示）---
@@ -906,40 +816,6 @@ void showTaskContextMenu(
 }
 
 // =============================================================================
-// 忽略插件重试确认对话框（逃生舱）
-// =============================================================================
-
-/// 逃生舱：确认后忽略插件重新解析，直接用原始链接恢复下载。
-void showIgnorePluginRetryDialog(BuildContext context, {required String taskId}) {
-  if (!context.mounted) return;
-  final c = AppColors.of(context);
-  final s = LocaleScope.of(context);
-  showShadDialog(
-    context: context,
-    barrierColor: c.dialogBarrier,
-    animateIn: const [],
-    animateOut: const [],
-    builder: (ctx) => ShadDialog(
-      title: Text(s.taskIgnorePluginRetryTitle),
-      description: Text(s.taskIgnorePluginRetryMsg),
-      actions: [
-        ShadButton.outline(
-          onPressed: () => Navigator.of(ctx).pop(),
-          child: Text(s.cancel),
-        ),
-        ShadButton(
-          onPressed: () {
-            Navigator.of(ctx).pop();
-            IgnorePluginRetry(taskId: taskId).sendSignalToRust();
-          },
-          child: Text(s.taskIgnorePluginRetry),
-        ),
-      ],
-    ),
-  );
-}
-
-// =============================================================================
 // 文件/文件夹操作
 // =============================================================================
 
@@ -1029,23 +905,25 @@ class _RenameTaskDialogContentState extends State<_RenameTaskDialogContent> {
         .timeout(const Duration(seconds: 10));
     DownloadController.globalInstance?.renameTask(taskId, newName);
 
-    resultFuture.then((msg) {
-      sonner.show(
-        ShadToast(
-          title: Text(
-            msg.ok ? s.renameTaskSuccess : _renameErrorText(s, msg.error),
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    }).catchError((Object _) {
-      sonner.show(
-        ShadToast(
-          title: Text(s.renameTaskTimeout),
-          duration: const Duration(seconds: 3),
-        ),
-      );
-    });
+    resultFuture
+        .then((msg) {
+          sonner.show(
+            ShadToast(
+              title: Text(
+                msg.ok ? s.renameTaskSuccess : _renameErrorText(s, msg.error),
+              ),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        })
+        .catchError((Object _) {
+          sonner.show(
+            ShadToast(
+              title: Text(s.renameTaskTimeout),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        });
   }
 
   @override
@@ -1071,10 +949,7 @@ class _RenameTaskDialogContentState extends State<_RenameTaskDialogContent> {
         ),
         ShadButton(
           onPressed: _submit,
-          child: Text(
-            s.renameTask,
-            style: const TextStyle(fontSize: 13),
-          ),
+          child: Text(s.renameTask, style: const TextStyle(fontSize: 13)),
         ),
       ],
       child: Padding(
@@ -1487,90 +1362,3 @@ class _KeyBadge extends StatelessWidget {
   }
 }
 
-// =============================================================================
-// 插件处理中 — 文件图标外圈旋转扫光边框（旁路指示，不影响任务状态机）
-// =============================================================================
-
-class _PluginProcessingRing extends StatefulWidget {
-  final BorderRadius borderRadius;
-  final Color color;
-  final Widget child;
-
-  const _PluginProcessingRing({
-    required this.borderRadius,
-    required this.color,
-    required this.child,
-  });
-
-  @override
-  State<_PluginProcessingRing> createState() => _PluginProcessingRingState();
-}
-
-class _PluginProcessingRingState extends State<_PluginProcessingRing>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (context, child) => CustomPaint(
-        foregroundPainter: _SweepBorderPainter(
-          progress: _ctrl.value,
-          color: widget.color,
-          borderRadius: widget.borderRadius,
-        ),
-        child: child,
-      ),
-      child: widget.child,
-    );
-  }
-}
-
-/// 旋转扫光描边：SweepGradient 沿圆角矩形边框旋转，形成「追光」环。
-class _SweepBorderPainter extends CustomPainter {
-  final double progress;
-  final Color color;
-  final BorderRadius borderRadius;
-
-  _SweepBorderPainter({
-    required this.progress,
-    required this.color,
-    required this.borderRadius,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    final rrect = borderRadius.toRRect(rect.deflate(0.75));
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5
-      ..strokeCap = StrokeCap.round
-      ..shader = SweepGradient(
-        colors: [
-          color.withValues(alpha: 0),
-          color.withValues(alpha: 0),
-          color,
-        ],
-        stops: const [0.0, 0.55, 1.0],
-        transform: GradientRotation(progress * 2 * math.pi),
-      ).createShader(rect);
-    canvas.drawRRect(rrect, paint);
-  }
-
-  @override
-  bool shouldRepaint(_SweepBorderPainter old) =>
-      old.progress != progress ||
-      old.color != color ||
-      old.borderRadius != borderRadius;
-}

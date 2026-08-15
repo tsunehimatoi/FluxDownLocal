@@ -36,8 +36,7 @@ export interface FluxDownSettings {
   /**
    * 是否接管页面内 magnet: 链接点击（阻止浏览器交给系统默认磁力
    * 处理程序，改由 FluxDown 下载）。关闭后点击磁力链接走系统默认
-   * 处理程序（如 qBittorrent）；资源面板仍会展示探测到的磁力资源，
-   * 供手动选择用 FluxDown 下载。默认开启。
+   * 处理程序（如 qBittorrent）。默认开启。
    */
   interceptMagnet: boolean;
 
@@ -47,17 +46,6 @@ export interface FluxDownSettings {
   notifyLocalTask: boolean;
   /** 发送到远程服务器的任务通知（创建成功/失败） */
   notifyRemoteTask: boolean;
-
-  // === 资源嗅探 & 页面内 UI 设置 ===
-
-  /** 是否启用资源嗅探（检测页面中的可下载资源） */
-  resourceSniffing: boolean;
-  /** 是否在视频元素上显示浮动下载按钮 */
-  showFloatingButton: boolean;
-  /** 是否显示底部资源面板 */
-  showResourcePanel: boolean;
-  /** 是否嗅探图片资源（默认关闭，开启后显示 >100KB 的图片） */
-  sniffImages: boolean;
 
   // === 远程下载源设置 ===
 
@@ -208,12 +196,6 @@ const DEFAULT_SETTINGS: FluxDownSettings = {
   // 任务发送通知（本地默认关闭，按需开启；远程默认开启）
   notifyLocalTask: false,
   notifyRemoteTask: true,
-
-  // 资源嗅探 & 页面内 UI
-  resourceSniffing: true,
-  showFloatingButton: true,
-  showResourcePanel: true,
-  sniffImages: false,
 
   // 远程下载源
   remoteMode: "off",

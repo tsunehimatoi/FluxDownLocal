@@ -14,7 +14,7 @@ use fluxdown_engine::Engine;
 use fluxdown_engine::bt_downloader::BtConfig;
 use fluxdown_engine::db::Db;
 use fluxdown_engine::download_manager::{
-    CreateGroupSpec, NewTaskSpec, ResolveOutcome, ResolvePreviewOutcome, TaskDone,
+    CreateGroupSpec, NewTaskSpec, ResolvePreviewOutcome, TaskDone,
 };
 use fluxdown_engine::log_info;
 use fluxdown_engine::proxy_config::ProxyConfig;
@@ -36,8 +36,8 @@ pub enum ActorCmd {
         /// 文件大小提示（aria2/接管入口透传；REST 创建为 0）。
         hint_file_size: i64,
         /// 无人值守创建（接管入口 + config `silent_skip_selection` 开启时
-        /// true）：跳过 BT 文件/HLS·DASH 画质/插件变体的 WS 选择往返，直接
-        /// 按默认开始。REST/aria2 创建恒 false（Web 弹窗仍有人在场）。
+        /// true）：跳过 BT 文件/HLS·DASH 画质的 WS 选择往返，直接
+        /// 按默认开始。外部接管与管理 API/aria2 都遵循该设置。
         unattended: bool,
         ack: oneshot::Sender<Result<String, ApiError>>,
     },
@@ -71,12 +71,6 @@ pub enum ActorCmd {
     /// 配置键已写入 DB，按键名 live-apply 到引擎（镜像桌面 SaveConfig 分支）。
     ApplyConfig {
         keys: Vec<String>,
-        ack: oneshot::Sender<()>,
-    },
-    /// GET /api/v1/config 前置：把内存中的 CDN 遥测样本同步落盘到 config 表
-    /// `cdn_pending_reports`（对齐 hub 的 RequestConfig 处理点），Web 面板
-    /// 众包上报才能读到本轮任务的全部样本。
-    FlushCdnReports {
         ack: oneshot::Sender<()>,
     },
     CreateQueue {
@@ -258,8 +252,6 @@ pub async fn run_actor(
     mut cmd_rx: mpsc::Receiver<ActorCmd>,
     mut done_rx: mpsc::Receiver<TaskDone>,
     mut retry_rx: mpsc::Receiver<String>,
-    mut resolve_rx: mpsc::UnboundedReceiver<ResolveOutcome>,
-    mut plugin_retry_rx: mpsc::UnboundedReceiver<(String, u64)>,
 ) {
     // 启动预热：加载队列缓存（每队列限速/并发生效）+ 广播全量任务快照。
     engine.manager.load_queues().await;
@@ -308,12 +300,6 @@ pub async fn run_actor(
                     log_info!("[server-actor] auto-retry: resuming task {}", task_id);
                     engine.manager.resume_task_auto(&task_id).await;
                 }
-            }
-            Some(out) = resolve_rx.recv() => {
-                engine.manager.on_resolve_ready(out).await;
-            }
-            Some((task_id, delay_ms)) = plugin_retry_rx.recv() => {
-                engine.manager.plugin_request_retry(&task_id, delay_ms).await;
             }
             _ = rescan_timer.tick() => {
                 engine.manager.spawn_file_scan();
@@ -477,10 +463,6 @@ async fn handle_cmd(cmd: ActorCmd, engine: &mut Engine) {
         }
         ActorCmd::ApplyConfig { keys, ack } => {
             apply_config(engine, &keys).await;
-            let _ = ack.send(());
-        }
-        ActorCmd::FlushCdnReports { ack } => {
-            engine.manager.flush_cdn_pending_reports().await;
             let _ = ack.send(());
         }
         ActorCmd::CreateQueue {
@@ -782,29 +764,6 @@ async fn apply_config(engine: &mut Engine, keys: &[String]) {
             "cdn_max_nodes" => {
                 if let Some(v) = all.get(key).and_then(|v| v.parse::<i32>().ok()) {
                     engine.manager.set_cdn_max_nodes(v.clamp(0, 8));
-                }
-            }
-            "cdn_resolver_endpoints" => {
-                if let Some(v) = all.get(key) {
-                    engine.manager.set_cdn_resolver_endpoints(v);
-                }
-            }
-            "cdn_hints_base" => {
-                if let Some(v) = all.get(key) {
-                    engine.manager.set_cdn_hints_base(v);
-                }
-            }
-            "cdn_ecs_subnets" => {
-                if let Some(v) = all.get(key) {
-                    engine.manager.set_cdn_ecs_subnets(v);
-                }
-            }
-            "cdn_pending_reports" => {
-                // Dart 上报成功后写空串清空；引擎自己写入的非空值不回调（避免自触发）。
-                if let Some(v) = all.get(key)
-                    && v.is_empty()
-                {
-                    engine.manager.clear_cdn_pending_reports();
                 }
             }
             "use_server_time" => {

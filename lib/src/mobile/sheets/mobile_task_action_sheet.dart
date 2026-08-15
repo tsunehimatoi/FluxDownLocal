@@ -87,8 +87,7 @@ Future<void> showMobileTaskActionSheet(
       };
 
       // completed 与 canceled 均为终态：不提供暂停/继续、Boost、移动队列。
-      // canceled 只由只读的远程任务镜像（RemoteTaskStatus.canceled）产生
-      // （见 TaskStatus 文档），这三个操作对它要么静默无效，要么（Boost）
+      // canceled 是保留的只读终态，这三个操作对它要么静默无效，要么（Boost）
       // 弹出一个声称已生效、实际不会有任何效果的 toast。
       final manageable =
           task.status != TaskStatus.completed &&
@@ -273,7 +272,8 @@ Future<void> _showMoveToQueueSheet(
       }
 
       final rows = <Widget>[
-        for (final q in controller.queues) queueItem(q.queueId, queueDisplayName(s, q)),
+        for (final q in controller.queues)
+          queueItem(q.queueId, queueDisplayName(s, q)),
       ];
 
       return MobileSheetContainer(

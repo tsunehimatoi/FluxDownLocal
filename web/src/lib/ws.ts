@@ -7,7 +7,6 @@
 import { useSyncExternalStore } from 'react'
 import type { QueryClient } from '@tanstack/react-query'
 import { getBase, getToken, isAuthenticated } from './auth'
-import { t } from './i18n'
 import type {
   BtFileEntry,
   HlsQualityOption,
@@ -104,33 +103,9 @@ export const componentProgressStore = new Store<
 export const componentResultStore = new Store<
   { component: string; ok: boolean; message: string; at: number } | null
 >(null)
-/**
- * 插件 onDone 钩子活动状态：taskId → 正在处理该任务的 pluginId 集合（非空即
- * 展示“插件处理中…”指示器）。事件为 fire-and-forget，可能丢失/乱序，故仅
- * 作旁路展示，绝不驱动任务状态机。
- */
-export const pluginActivityStore = new Store<Record<string, Set<string>>>({})
-/** 每个 taskId 的看门狗计时器：`running=true` 到达时设/重置，到期兜底清除
- * 该任务的活动条目，防止 `running=false` 丢失导致指示器永久悬挂。 */
-const pluginActivityWatchdogs = new Map<string, ReturnType<typeof setTimeout>>()
-/** 看门狗超时：钩子墙钟硬顶 1830s + 30s 余量。 */
-const PLUGIN_ACTIVITY_WATCHDOG_MS = 1_860_000
 /** 任务完成瞬间跃迁（status→3）的旁路监听：CDN 遥测上报等后台服务用
- *  （lib/cloud/cdn.ts 注册；ws 不反向 import，避免与 session.ts 的 Store 依赖成环）。 */
+ *  消费者可注册监听器，ws 本身不反向依赖业务模块。 */
 export const taskCompletionListeners = new Set<() => void>()
-
-function clearPluginActivityWatchdog(taskId: string) {
-  const timer = pluginActivityWatchdogs.get(taskId)
-  if (timer) clearTimeout(timer)
-  pluginActivityWatchdogs.delete(taskId)
-}
-
-/** 清空全部插件活动条目 + 看门狗（WS 重连时调用：断线期间的活动状态不可信）。 */
-function clearAllPluginActivity() {
-  for (const timer of pluginActivityWatchdogs.values()) clearTimeout(timer)
-  pluginActivityWatchdogs.clear()
-  if (Object.keys(pluginActivityStore.get()).length > 0) pluginActivityStore.set({})
-}
 
 // ---------------- 连接管理 ----------------
 
@@ -174,7 +149,6 @@ function wsUrl(): string {
 
 function openSocket() {
   // 断线期间插件活动状态不可信（事件可能已丢失），每次（重）连接前清空。
-  clearAllPluginActivity()
   connStore.set((s) => ({ ...s, status: 'connecting' }))
   const ws = new WebSocket(wsUrl())
   socket = ws
@@ -368,59 +342,6 @@ function dispatch(msg: WsServerMsg) {
         }
       })
       break
-    case 'pluginsChanged':
-      void queryClientRef?.invalidateQueries({ queryKey: ['plugins'] })
-      break
-    case 'pluginAutoDisabled': {
-      const identity = msg.identity
-      // 动态 import 打破与 confirm.ts 的静态循环依赖（confirm.ts 反向依赖本模块的 Store）。
-      void import('./confirm').then(({ alertDialog }) =>
-        alertDialog({
-          title: t('plugins.autoDisabledTitle'),
-          message: t('plugins.autoDisabledMsg', { name: identity }),
-        }),
-      )
-      break
-    }
-    case 'pluginHookActivity': {
-      const { taskId, pluginId, running } = msg
-      if (running) {
-        pluginActivityStore.set((prev) => {
-          const next = new Set(prev[taskId])
-          next.add(pluginId)
-          return { ...prev, [taskId]: next }
-        })
-        // 每次 running=true 都重置该 taskId 的看门狗（并发多插件钩子共用一个）。
-        clearPluginActivityWatchdog(taskId)
-        pluginActivityWatchdogs.set(
-          taskId,
-          setTimeout(() => {
-            pluginActivityWatchdogs.delete(taskId)
-            pluginActivityStore.set((prev) => {
-              if (!(taskId in prev)) return prev
-              const next = { ...prev }
-              delete next[taskId]
-              return next
-            })
-          }, PLUGIN_ACTIVITY_WATCHDOG_MS),
-        )
-      } else {
-        pluginActivityStore.set((prev) => {
-          const set = prev[taskId]
-          if (!set?.has(pluginId)) return prev
-          const next = new Set(set)
-          next.delete(pluginId)
-          if (next.size === 0) {
-            const rest = { ...prev }
-            delete rest[taskId]
-            return rest
-          }
-          return { ...prev, [taskId]: next }
-        })
-        if (!(taskId in pluginActivityStore.get())) clearPluginActivityWatchdog(taskId)
-      }
-      break
-    }
     case 'componentProgress':
       componentProgressStore.set((prev) => ({
         ...prev,
@@ -454,8 +375,3 @@ export function useGlobalSpeed(): number {
   return sum
 }
 
-/** 该任务是否有插件 onDone 钩子正在处理（(taskId, pluginId) 集合非空）。 */
-export function useTaskPluginActivity(taskId: string): boolean {
-  const activity = useStore(pluginActivityStore)
-  return (activity[taskId]?.size ?? 0) > 0
-}

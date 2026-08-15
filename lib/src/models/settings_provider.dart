@@ -37,14 +37,11 @@ class SettingsProvider extends ChangeNotifier {
   bool _closeToTray = true; // 默认关闭到托盘
   bool _startMinimizedToTray = false; // 默认启动时显示主窗口
   bool _autoStartup = false; // 默认不开机启动
-  bool _autoCheckUpdate = true; // 默认启动时自动检查更新
-  String _updateChannel = 'stable'; // 更新渠道：stable 稳定版 / frontier 预览版（含预发布）
   bool _notifyOnComplete = true; // 默认任务完成时弹出通知
   bool _silentDownloadEnabled = false; // 免打扰下载：外部请求不弹确认框直接下载
   bool _silentSkipSelection = false; // 免打扰子开关：跳过 BT/HLS/变体二次选择弹窗
   bool _useServerTime = false; // 完成文件的修改时间采用服务器 Last-Modified
   bool _keepAwakeWhileDownloading = false; // 默认不阻止睡眠/息屏
-  bool _analyticsEnabled = true; // 匿名使用统计（每日活跃）；首装事件不受此开关控制
   int _logMaxSizeMb = 10; // 日志总大小上限（MB），超出自动清理
 
   /// Webhook 端点表（config 键 `webhook.endpoints`，JSON 数组）。
@@ -70,6 +67,7 @@ class SettingsProvider extends ChangeNotifier {
   // 标题栏工具按钮显示设置
   bool _showTitlebarPauseAll = true; // 全部暂停按钮
   bool _showTitlebarResumeAll = true; // 全部恢复按钮
+  bool _showTitlebarClearCompleted = true; // 清空已完成任务按钮
   bool _showTitlebarSettings = true; // 设置按钮
   bool _showTitlebarTheme = true; // 主题切换按钮
 
@@ -112,7 +110,7 @@ class SettingsProvider extends ChangeNotifier {
   String _proxyNoList = ''; // 逗号分隔的排除列表
 
   /// 已保存的站点 HTTP Basic 凭据（JSON：{"host[:port]":{"user","pass"}}）。
-  /// 设备本地敏感数据，不进云同步目录；由引擎在建任务时写入/套用，
+  /// 设备本地敏感数据；由引擎在建任务时写入/套用，
   /// 设置页只做列出与删除。
   String _siteAuthCredentials = '';
 
@@ -270,14 +268,11 @@ class SettingsProvider extends ChangeNotifier {
   bool get closeToTray => _closeToTray;
   bool get startMinimizedToTray => _startMinimizedToTray;
   bool get autoStartup => _autoStartup;
-  bool get autoCheckUpdate => _autoCheckUpdate;
-  String get updateChannel => _updateChannel;
   bool get notifyOnComplete => _notifyOnComplete;
   bool get silentDownloadEnabled => _silentDownloadEnabled;
   bool get silentSkipSelection => _silentSkipSelection;
   bool get useServerTime => _useServerTime;
   bool get keepAwakeWhileDownloading => _keepAwakeWhileDownloading;
-  bool get analyticsEnabled => _analyticsEnabled;
   int get logMaxSizeMb => _logMaxSizeMb;
 
   /// Webhook 端点表（免费自托管推送）。
@@ -300,13 +295,14 @@ class SettingsProvider extends ChangeNotifier {
   bool? get showSidebarDeviceOverride => _showSidebarDevice;
 
   /// 设备协同区最终是否显示：override 优先，未设置时跟随是否存在任意
-  /// 设备（云端远程设备或本地配对设备）。
+  /// 局域网配对设备。
   bool showSidebarDeviceEffective(bool hasAnyDevice) =>
       _showSidebarDevice ?? hasAnyDevice;
 
   // 标题栏工具按钮 Getters
   bool get showTitlebarPauseAll => _showTitlebarPauseAll;
   bool get showTitlebarResumeAll => _showTitlebarResumeAll;
+  bool get showTitlebarClearCompleted => _showTitlebarClearCompleted;
   bool get showTitlebarSettings => _showTitlebarSettings;
   bool get showTitlebarTheme => _showTitlebarTheme;
 
@@ -620,33 +616,11 @@ class SettingsProvider extends ChangeNotifier {
     _saveToRust('close_to_tray', value.toString());
   }
 
-  void setAnalyticsEnabled(bool value) {
-    if (_analyticsEnabled == value) return;
-    _analyticsEnabled = value;
-    notifyListeners();
-    _saveToRust('analytics_enabled', value.toString());
-  }
-
   void setStartMinimizedToTray(bool value) {
     if (_startMinimizedToTray == value) return;
     _startMinimizedToTray = value;
     notifyListeners();
     _saveToRust('start_minimized_to_tray', value.toString());
-  }
-
-  void setAutoCheckUpdate(bool value) {
-    if (_autoCheckUpdate == value) return;
-    _autoCheckUpdate = value;
-    notifyListeners();
-    _saveToRust('auto_check_update', value.toString());
-  }
-
-  /// 设置更新渠道（'stable' 稳定版 / 'frontier' 预览版）。
-  void setUpdateChannel(String value) {
-    if (_updateChannel == value) return;
-    _updateChannel = value;
-    notifyListeners();
-    _saveToRust('update_channel', value);
   }
 
   void setFloatingBallEnabled(bool value) {
@@ -801,6 +775,13 @@ class SettingsProvider extends ChangeNotifier {
     _showTitlebarResumeAll = value;
     notifyListeners();
     _saveToRust('show_titlebar_resume_all', value.toString());
+  }
+
+  void setShowTitlebarClearCompleted(bool value) {
+    if (_showTitlebarClearCompleted == value) return;
+    _showTitlebarClearCompleted = value;
+    notifyListeners();
+    _saveToRust('show_titlebar_clear_completed', value.toString());
   }
 
   void setShowTitlebarSettings(bool value) {
@@ -1193,7 +1174,7 @@ class SettingsProvider extends ChangeNotifier {
     _saveToRust('bt_seed_enabled', value ? '1' : '0');
   }
 
-  // 云同步应用做种限制：与引擎 kv 同一编码（value > 0 = 启用并取该值，
+  // 应用做种限制：与引擎 kv 同一编码（value > 0 = 启用并取该值，
   // 0 = 关闭）。关闭时保留内存数值与缓存，用户再次手动开启可恢复。
 
   void applySyncedBtSeedRatioLimit(double value) {
@@ -1395,18 +1376,18 @@ class SettingsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setLocalServerTakeoverEnabled(bool value) {
-    if (_localServerTakeoverEnabled == value) return;
-    _localServerTakeoverEnabled = value;
-    notifyListeners();
-    _saveToRust('local_server_takeover_enabled', value.toString());
-  }
-
   void setLocalServerJsonrpcEnabled(bool value) {
     if (_localServerJsonrpcEnabled == value) return;
     _localServerJsonrpcEnabled = value;
     notifyListeners();
     _saveToRust('local_server_jsonrpc_enabled', value.toString());
+  }
+
+  void setLocalServerTakeoverEnabled(bool value) {
+    if (_localServerTakeoverEnabled == value) return;
+    _localServerTakeoverEnabled = value;
+    notifyListeners();
+    _saveToRust('local_server_takeover_enabled', value.toString());
   }
 
   /// 管理 API 强制鉴权：从关到开且当前 token 为空时，自动生成 32 位 hex token 并一并保存
@@ -1801,12 +1782,6 @@ class SettingsProvider extends ChangeNotifier {
           _startMinimizedToTray = entry.value == 'true';
         case 'auto_startup':
           _autoStartup = entry.value == 'true';
-        case 'auto_check_update':
-          _autoCheckUpdate = entry.value == 'true';
-        case 'analytics_enabled':
-          _analyticsEnabled = entry.value == 'true';
-        case 'update_channel':
-          _updateChannel = entry.value.isEmpty ? 'stable' : entry.value;
         case 'bt_enable_dht':
           _btEnableDht = entry.value == 'true';
         case 'bt_enable_upnp':
@@ -2003,6 +1978,8 @@ class SettingsProvider extends ChangeNotifier {
           _showTitlebarPauseAll = entry.value != 'false';
         case 'show_titlebar_resume_all':
           _showTitlebarResumeAll = entry.value != 'false';
+        case 'show_titlebar_clear_completed':
+          _showTitlebarClearCompleted = entry.value != 'false';
         case 'show_titlebar_settings':
           _showTitlebarSettings = entry.value != 'false';
         case 'show_titlebar_theme':

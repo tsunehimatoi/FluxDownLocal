@@ -15,7 +15,7 @@
 | 架构全图、顶层目录树（哪个目录管什么） | `.omp/knowledge/README.md` |
 | 状态码 / DB 表与字段语义、6 种协议、引擎子系统（auto_proxy、RSS、segment_coordinator…）、插件系统、受管组件 | `.omp/knowledge/engine.md` |
 | HTTP API 路由组与鉴权、hub / cli / nmh / updater、headless server env 与扩展路由 | `.omp/knowledge/hosts-and-api.md` |
-| Flutter 前端（主题 token、云同步、widgets 族、移动端、~80 个设置项分类）、扩展、用户脚本、Web SPA、官网 | `.omp/knowledge/clients.md` |
+| Flutter 前端（主题 token、widgets 族、移动端、设置项分类）、扩展、用户脚本、Web SPA | `.omp/knowledge/clients.md` |
 | 日志系统细节、发布流水线矩阵、设计文档实现状态（已实现 vs 仅设计，含命名歧义澄清） | `.omp/knowledge/ops.md` |
 | **「要加 X 改哪里」全表 —— 动手前先查这张** | `.omp/knowledge/extension-points.md` |
 
@@ -55,7 +55,7 @@
 - **cwd = 上级 `FluxDownProject/` 工作区**（那里的 `AGENTS.md` 自动加载，本文件按需 `read`）：所有路径前置 `FluxDown/`；命令必须带目录限定（bash 工具 `cwd="FluxDown"`、`cd FluxDown && …`、`--manifest-path FluxDown/…`），git 一律 `git -C FluxDown …`。**工作区根既不是 git 仓库也不是工程根**，不带限定必然报错；bash 的 cwd 不跨调用保持。
 
 两份文档分工，互不复制：
-- 跨仓地图与跨仓契约（FluxCloud `/api/v1`、插件索引仓、主题仓、发布镜像 secret）→ 上级 `../AGENTS.md`。
+- 跨仓地图与发布流水线契约 → 上级 `../AGENTS.md`。
 - FluxDown 内部架构 / 不变式 / 命令 → 本文件；**内部技术细节以本文件为准**（离代码最近）。
 - 两边都写的红线（git 授权门槛、分支模型、禁用命令、i18n 基线）语义必须一致；FluxDown 被单独 clone 时本文件自洽，不依赖上级文件存在。
 
@@ -141,8 +141,8 @@ git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水�
 - **BT 判定只认 `magnet:` 与 `torrent-file://` 哨兵**。HTTP 的 `.torrent` 直链不会走 BT，会被当普通文件下回一个种子文件；要变成真下载必须先抓字节再以 `NewTaskSpec::torrent_file_bytes` 建任务（RSS 就是这么做的）。
 - **「复制链接」类 UI 一律读 `origin_url`，空则回退 `url`**（torrent 任务的 `url` 是哨兵）——Dart `DownloadTask.shareUrl` / web `taskShareUrl()`。
 - **RSS 是无人值守链路**：任何「需要用户点一下才能继续」的东西都是 bug。建任务即落全选 + `unattended=1`（否则启动时会弹 N 次文件选择框）；`create_task` 内部自发建任务必须补 `load_and_send_all_tasks()`（`TaskProgress` 不带 `queue_id`）；手动「重新下载」对**任何**状态放行。
-- 引擎学习/遥测类 config 键（`cdn_node_health`、`auto_route_health`、`cdn_pending_reports`、`domain_conn_caps`）**UI 不读写**。
-- **遥测只有两条匿名部署事件**（`app_installed` 一次 + `app_active` 每日，`analytics_enabled` 门控），**绝不**采集下载/任务信息——不要新增遥测点。
+- 引擎本地学习类 config 键（`cdn_node_health`、`auto_route_health`、`domain_conn_caps`）**UI 不读写**。
+- App 与 headless server 不接入 FluxDown 官方账号、同步、遥测、更新或 CDN 配置服务；不要重新引入隐式外联。
 - 命名歧义：`tracker_subscription.rs` / `ed2k/server_subscription.rs` 是 BT tracker 列表 / ED2K `server.met` 订阅，与 `rss/` 的 feed 订阅无关；官网 `api/webhooks/github` 是 GitHub 接收器，与 `engine/src/webhook.rs` 的任务事件推送无关。
 
 ---

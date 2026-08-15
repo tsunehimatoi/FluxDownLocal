@@ -49,8 +49,6 @@ ENV FLUXDOWN_EMBED_WEBROOT=/webroot
 ARG FLUXDOWN_SERVER_VERSION
 ENV FLUXDOWN_SERVER_VERSION=$FLUXDOWN_SERVER_VERSION
 # 编译期匿名统计 App-Key 注入（空值 = 未注入，统计整体禁用）
-ARG FLUXDOWN_ANALYTICS_APP_KEY
-ENV FLUXDOWN_ANALYTICS_APP_KEY=$FLUXDOWN_ANALYTICS_APP_KEY
 # cache mount：本地重复构建增量编译；registry 缓存避免重复下载。
 # id 必须按 TARGETARCH 隔离：buildx 多平台构建里 amd64/arm64 两个 server 阶段并发跑，
 # 共享同一份 registry 缓存会让两个 cargo 同时解包同一个 crate（`.cargo-ok` File exists

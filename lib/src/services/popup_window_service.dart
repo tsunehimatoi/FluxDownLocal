@@ -30,7 +30,6 @@ import '../models/settings_provider.dart';
 import '../popup/popup_payload.dart';
 import '../theme/theme_provider.dart';
 import '../widgets/quick_download_form.dart';
-import 'cloud/cloud_auth_service.dart';
 import 'link/local_pairing_service.dart';
 import 'log_service.dart';
 import 'quick_download_submitter.dart';
@@ -158,7 +157,6 @@ class PopupWindowService {
     }
 
     final queues = DownloadController.globalInstance?.queues ?? const [];
-    final devices = CloudAuthService.instance.remoteDevices;
     final localDevices = LocalPairingService.instance.localDevices;
     // 系统代理检测：show 前触发一次刷新（在途去重），但不等待结果——
     // 载荷用缓存值填充；popup isolate 零 Rust 初始化，检测态只能在
@@ -185,19 +183,10 @@ class PopupWindowService {
             defaultSegments: q.defaultSegments,
           ),
       ],
-      devices: [
-        for (final d in devices)
-          QuickDeviceOption(
-            deviceId: d.deviceId,
-            name: d.name,
-            platform: d.platform,
-            isOnline: d.isOnline,
-          ),
-      ],
       // 本地配对设备（局域网直连，免账号）：popup isolate 不接线 rinf
       // 信号，LocalPairingService.instance.localDevices 在那里恒为空
       // （见 quick_download_form.dart 的 _localDeviceOptions 注释），
-      // 名册必须在这里序列化进载荷，与云端设备名册同一种方式下发。
+      // 名册必须在这里序列化进载荷。
       localDevices: [
         for (final d in localDevices)
           QuickDeviceOption(

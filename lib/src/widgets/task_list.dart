@@ -113,7 +113,7 @@ class _TaskListState extends State<TaskList> {
         final filePath = task.filePath;
         openFile(filePath);
       case TaskStatus.canceled:
-        break; // 已取消的远程任务镜像没有本地文件，双击无动作
+        break; // 已取消终态，双击无动作
     }
   }
 
@@ -325,8 +325,7 @@ class _TaskListState extends State<TaskList> {
                               widget.controller.selectedGroupId,
                           density: prefs.density,
                           // 行点击 = 查看组详情；展开/收起仅由左侧 chevron 触发。
-                          onTap: () =>
-                              widget.onGroupTap?.call(entity.groupId),
+                          onTap: () => widget.onGroupTap?.call(entity.groupId),
                           onToggleExpand: () => widget.controller
                               .toggleGroupExpanded(entity.groupId),
                           onPauseAll: () =>
@@ -343,9 +342,8 @@ class _TaskListState extends State<TaskList> {
                             context,
                             downloadGroup.sourceUrl,
                           ),
-                          onDelete: ({required bool deleteFiles}) => widget
-                              .controller
-                              .deleteGroup(
+                          onDelete: ({required bool deleteFiles}) =>
+                              widget.controller.deleteGroup(
                                 entity.groupId,
                                 deleteFiles: deleteFiles,
                               ),
@@ -364,19 +362,18 @@ class _TaskListState extends State<TaskList> {
                           density: prefs.density,
                           isSelected:
                               task.id == widget.controller.selectedTaskId,
-                          flashEpoch:
-                              task.id == _flashMemberId ? _flashEpoch : 0,
+                          flashEpoch: task.id == _flashMemberId
+                              ? _flashEpoch
+                              : 0,
                           onTap: () => widget.onTaskTap?.call(task.id),
                           onPause: () => widget.controller.pauseTask(task.id),
-                          onResume: () =>
-                              widget.controller.resumeTask(task.id),
+                          onResume: () => widget.controller.resumeTask(task.id),
                           onOpenFile: () => openFile(task.filePath),
                           onMoreTapDown: (details) => showTaskContextMenu(
                             context,
                             details.globalPosition,
                             task: task,
-                            onPause: () =>
-                                widget.controller.pauseTask(task.id),
+                            onPause: () => widget.controller.pauseTask(task.id),
                             onResume: () =>
                                 widget.controller.resumeTask(task.id),
                             onDelete: ({required bool deleteFiles}) => widget
@@ -423,8 +420,7 @@ class _TaskListState extends State<TaskList> {
                         onDelete: ({required bool deleteFiles}) => widget
                             .controller
                             .deleteTask(task.id, deleteFiles: deleteFiles),
-                        isPriority:
-                            widget.controller.priorityTaskId == task.id,
+                        isPriority: widget.controller.priorityTaskId == task.id,
                         onBoost: () =>
                             widget.controller.setPriorityTask(task.id),
                         onEditThreads: () => showEditThreadsDialog(
@@ -432,8 +428,6 @@ class _TaskListState extends State<TaskList> {
                           widget.controller,
                           task,
                         ),
-                        isPluginProcessing: widget.controller
-                            .isPluginProcessing(task.id),
                         isManageMode: isManage,
                         isChecked: widget.controller.checkedTaskIds.contains(
                           task.id,
@@ -480,7 +474,10 @@ class _TaskListState extends State<TaskList> {
   ) {
     final isManage = widget.controller.isManageMode;
     const gap = _gridGap;
-    final usableWidth = (listWidth - 32).clamp(_gridMinCardWidth, double.infinity);
+    final usableWidth = (listWidth - 32).clamp(
+      _gridMinCardWidth,
+      double.infinity,
+    );
     final cols = (((usableWidth + gap) / (_gridMinCardWidth + gap)).floor())
         .clamp(1, 999);
     final cardWidth = (usableWidth - (cols - 1) * gap) / cols;
@@ -553,10 +550,7 @@ class _TaskListState extends State<TaskList> {
 
   /// 贪心行装箱：任务占 1 槽，组占 2 槽（本波 [GroupEntity] 恒空集不产出，
   /// 此逻辑为下一波组卡片预留）。
-  List<List<ListEntity>> _packGridRows(
-    List<ListEntity> entities,
-    int cols,
-  ) {
+  List<List<ListEntity>> _packGridRows(List<ListEntity> entities, int cols) {
     final rows = <List<ListEntity>>[];
     var current = <ListEntity>[];
     var used = 0;
@@ -595,10 +589,17 @@ class _TaskListState extends State<TaskList> {
         ),
       );
     }
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: children);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: children,
+    );
   }
 
-  Widget _buildGridCard(BuildContext context, ListEntity entity, bool isManage) {
+  Widget _buildGridCard(
+    BuildContext context,
+    ListEntity entity,
+    bool isManage,
+  ) {
     if (entity is GroupEntity) {
       final downloadGroup = widget.controller.groupById(entity.groupId);
       if (downloadGroup == null) return const SizedBox.shrink();
@@ -991,7 +992,6 @@ class _ManageToggleButtonState extends State<_ManageToggleButton> {
   }
 }
 
-
 // =============================================================================
 // 分组头（吸顶 + 玻璃 + 聚合信息 + hover 批量操作）
 // =============================================================================
@@ -1017,7 +1017,11 @@ class _SectionHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => 32;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return _SectionHeaderRow(
       section: section,
       folded: folded,
@@ -1261,13 +1265,20 @@ class _TaskGridCardState extends State<_TaskGridCard> {
     final isDone = task.status == TaskStatus.completed;
     final isErr = task.status == TaskStatus.error;
     final isDl = task.status == TaskStatus.downloading;
-    final color = taskStatusColor(task.status, c, fileMissing: task.fileMissing);
-    final selected = widget.isSelected || (widget.isManageMode && widget.isChecked);
+    final color = taskStatusColor(
+      task.status,
+      c,
+      fileMissing: task.fileMissing,
+    );
+    final selected =
+        widget.isSelected || (widget.isManageMode && widget.isChecked);
 
     final metaText = isDl
         ? '${task.speedText} · ${(task.progress * 100).toStringAsFixed(0)}%'
         : isErr
-        ? (task.errorMessage.isEmpty ? currentS.subtitleError : task.errorMessage)
+        ? (task.errorMessage.isEmpty
+              ? currentS.subtitleError
+              : task.errorMessage)
         : '${task.statusText} · ${task.sizeText}';
 
     return MouseRegion(

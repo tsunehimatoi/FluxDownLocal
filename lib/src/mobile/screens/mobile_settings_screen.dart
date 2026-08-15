@@ -1,16 +1,13 @@
 import 'package:flutter/material.dart' show ThemeMode;
 import 'package:flutter/widgets.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
-import 'package:url_launcher/url_launcher.dart';
 
-import '../../bindings/bindings.dart';
 import '../../i18n/locale_provider.dart';
 import '../../models/download_task.dart';
 import '../../models/settings_provider.dart';
 import '../../theme/app_colors.dart';
 import '../../theme/app_metrics.dart';
 import '../../theme/theme_provider.dart';
-import '../../services/update_service.dart';
 import '../../models/ua_presets.dart';
 import '../services/mobile_storage_service.dart';
 import '../mobile_ui.dart';
@@ -43,11 +40,7 @@ class MobileSettingsScreen extends StatelessWidget {
         children: [
           Positioned.fill(
             child: ListenableBuilder(
-              listenable: Listenable.merge([
-                settings,
-                themeProvider,
-                UpdateService.instance,
-              ]),
+              listenable: Listenable.merge([settings, themeProvider]),
               builder: (context, _) {
                 return ListView(
                   padding: EdgeInsets.fromLTRB(
@@ -227,26 +220,6 @@ class MobileSettingsScreen extends StatelessWidget {
                     _Group(
                       children: [
                         _Row(label: s.currentVersion, value: _appVersion),
-                        _buildUpdateRow(context),
-                        _Row(
-                          label: s.updateChannel,
-                          value: settings.updateChannel == 'frontier'
-                              ? s.updateChannelFrontier
-                              : s.updateChannelStable,
-                          onTap: () => _selectChannel(context),
-                        ),
-                        _Row(
-                          label: s.mobilePrivacyPolicy,
-                          onTap: () => launchUrl(
-                            Uri.parse('https://fluxdown.zerx.dev/privacy'),
-                          ),
-                        ),
-                        _Row(
-                          label: s.mobileOpenSource,
-                          onTap: () => launchUrl(
-                            Uri.parse('https://github.com/zerx-lab'),
-                          ),
-                        ),
                       ],
                     ),
                     Padding(
@@ -307,36 +280,6 @@ class MobileSettingsScreen extends StatelessWidget {
 
   int _trackerCount(String trackers) =>
       trackers.split('\n').where((l) => l.trim().isNotEmpty).length;
-
-  /// 检查更新行：按 UpdateService 状态展示并派发对应动作。
-  Widget _buildUpdateRow(BuildContext context) {
-    final s = LocaleScope.of(context);
-    final svc = UpdateService.instance;
-    final (value, onTap) = switch (svc.status) {
-      UpdateStatus.checking => (s.checking, null),
-      UpdateStatus.available => (
-        s.newVersionFound(svc.checkResult?.latestVersion ?? ''),
-        svc.downloadUpdate,
-      ),
-      UpdateStatus.downloading => (_downloadPercent(svc.progress), null),
-      UpdateStatus.readyToInstall => (s.installAndRestart, svc.installUpdate),
-      UpdateStatus.upToDate => (s.upToDate, svc.checkForUpdate),
-      UpdateStatus.error => (svc.errorMessage, svc.checkForUpdate),
-      UpdateStatus.idle => (null, svc.checkForUpdate),
-    };
-    return _Row(
-      label: s.checkUpdate,
-      value: value,
-      valueEllipsis: true,
-      onTap: onTap,
-    );
-  }
-
-  static String _downloadPercent(UpdateDownloadProgress? p) {
-    if (p == null || p.totalBytes <= 0) return '…';
-    final pct = (p.downloadedBytes * 100 / p.totalBytes).clamp(0, 100);
-    return '${pct.toStringAsFixed(0)}%';
-  }
 
   // ── 选择弹层 ──
 
@@ -463,20 +406,6 @@ class MobileSettingsScreen extends StatelessWidget {
         ('auto', s.proxyModeAuto),
       ],
       onSelect: settings.setProxyMode,
-    );
-  }
-
-  void _selectChannel(BuildContext context) {
-    final s = LocaleScope.of(context);
-    _showSelectSheet<String>(
-      context,
-      title: s.updateChannel,
-      current: settings.updateChannel,
-      options: [
-        ('stable', s.updateChannelStable),
-        ('frontier', s.updateChannelFrontier),
-      ],
-      onSelect: settings.setUpdateChannel,
     );
   }
 

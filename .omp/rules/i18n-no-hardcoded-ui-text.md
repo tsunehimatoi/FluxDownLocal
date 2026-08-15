@@ -37,5 +37,4 @@ Dart 侧文案承载点不止 `Text()`——本规则覆盖：`Text(` / `Selecta
 - 快捷键 / 符号 / 单位 / 版本号（如 `'Ctrl+A'`、`'MB/s'`），以及品牌名、URL、协议名、CLI 子命令等专有名词。
 - **语言自称**：语言选择器里的 `简体中文` / `English` / `日本語` 等条目（`NATIVE_NAMES`、`<option value="zh-CN">简体中文</option>`）本就不该被翻译。
 - 非 UI 字符串：日志文案、异常 message、注释、测试断言、`debugPrint`。
-- 纯中文管理后台（FluxCloud `admin/`）无 i18n 层，不适用本规则。
 - Dart 里**不是文案**的同名参数：`TextEditingController(text: …)`（输入框初值）、异常/DTO 的 `message:`（只有 `Tooltip(message:` 才算 UI）、模型字段 `name:`/`description:`（存数据，不渲染）。

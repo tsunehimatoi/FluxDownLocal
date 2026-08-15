@@ -40,65 +40,15 @@
       </div>
     </header>
 
-    <!-- Top tab bar: Tasks / Resources / Settings -->
+    <!-- Top tab bar: Tasks / Settings -->
     <nav class="top-tabs" id="topTabs">
       <button class="top-tab active" type="button" data-pane="tasks" data-i18n="popup.tabs.tasks">Tasks</button>
-      <button class="top-tab" type="button" data-pane="resources">
-        <span data-i18n="popup.tabs.resources">Resources</span>
-        <span class="tab-badge hidden" id="resourceBadge">0</span>
-      </button>
       <button class="top-tab" type="button" data-pane="settings" data-i18n="popup.tabs.settings">Settings</button>
     </nav>
-
-    <!-- ===== Pane: Resources (sniffed on active tab) ===== -->
-    <div class="tab-pane hidden" id="paneResources">
-      <section class="section resource-section">
-        <div class="res-tabs" id="resTypeTabs"></div>
-        <div class="res-scroll" id="resScroll">
-          <div class="task-state hidden" id="resEmpty">
-            <div class="task-state-icon">
-              <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-              </svg>
-            </div>
-            <div class="task-state-title" data-i18n="popup.resources.empty">No resources sniffed on this page</div>
-          </div>
-          <div class="res-list" id="resList"></div>
-        </div>
-        <div class="res-footer hidden" id="resFooter">
-          <label class="res-selectall">
-            <input type="checkbox" id="resSelectAll">
-            <span data-i18n="panel.selectAll">Select All</span>
-          </label>
-          <button class="btn-small confirm" id="resBatchBtn" type="button" disabled>
-            <span data-i18n="panel.batchDownload">Batch Download</span>&nbsp;(<span id="resBatchCount">0</span>)
-          </button>
-        </div>
-      </section>
-    </div>
 
     <!-- ===== Pane: Settings（拦截总开关已上移到头部）===== -->
     <div class="tab-pane hidden" id="paneSettings">
       <section class="section switch-section">
-        <div class="row">
-          <div class="switch-info">
-            <span class="label" data-i18n="settings.dotVisible">Floating Ball</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="dotVisibleToggle" checked>
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="row">
-          <div class="switch-info">
-            <span class="label" data-i18n="sniffer.resourceSniffing">Resource Sniffing</span>
-          </div>
-          <label class="toggle">
-            <input type="checkbox" id="sniffToggle" checked>
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="mode-hint" data-i18n="sniffer.resourceSniffingHint">Auto-detect downloadable resources on web pages</div>
         <div class="mode-hint" data-i18n="settings.altClickHint">Press Alt+Shift+D to quickly toggle download interception</div>
 
         <!-- 排除当前站点：完整排除列表在设置页 #rules 面板 -->

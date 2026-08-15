@@ -136,10 +136,9 @@ class QuickQueueOption {
   });
 }
 
-/// 表单可选目标设备（[QuickDownloadFormHost.devices] 的元素）。
+/// 表单可选局域网目标设备。
 ///
-/// 与 `CloudDevice` 解耦：独立小窗引擎中不存在 CloudAuthService，
-/// 设备名册经载荷 JSON 注入后以本类型还原。
+/// 独立小窗的本地目标设备选项，经载荷 JSON 注入后以本类型还原。
 class QuickDeviceOption {
   final String deviceId;
   final String name;
@@ -212,9 +211,7 @@ class QuickDownloadFormResult {
   /// 「稍后下载」提交 — 建任务但不启动（透传为 startPaused）。
   final bool startLater;
 
-  /// 目标设备 ID（'' = 本机哨兵值；非空时可能是云账户设备 ID 或本地配对
-  /// 设备指纹——两者共用同一字段，落地时由 [submitQuickDownload] 按指纹
-  /// 是否命中 [LocalPairingService] 名册分流，表单侧不关心差异）。
+  /// 目标设备 ID（'' = 本机哨兵值；非空时为本地配对设备指纹）。
   final String targetDeviceId;
 
   const QuickDownloadFormResult({
@@ -243,9 +240,6 @@ class QuickDownloadFormResult {
 abstract class QuickDownloadFormHost {
   /// 可选队列列表（空 = 不显示队列选择器）
   List<QuickQueueOption> get queues;
-
-  /// 可选目标设备列表（空 = 不显示"下载到"选择器）
-  List<QuickDeviceOption> get devices;
 
   /// 全局默认线程数（0 = 自动）
   int get defaultSegments;
@@ -790,26 +784,14 @@ class _QuickDownloadFormState extends State<QuickDownloadForm> {
             ),
           ),
           const SizedBox(height: 14),
-          if (widget.host.devices.isNotEmpty ||
-              (LocalPairingService.instance.supported &&
-                  _localDeviceOptions.isNotEmpty)) ...[
+          if (LocalPairingService.instance.supported &&
+              _localDeviceOptions.isNotEmpty) ...[
             QuickSectionLabel(text: s.downloadTo, c: c),
             const SizedBox(height: 6),
             ShadSelect<String>(
               initialValue: _selectedTargetDevice,
               options: [
                 ShadOption(value: '', child: Text(s.thisDevice)),
-                for (final d in widget.host.devices)
-                  ShadOption(
-                    value: d.deviceId,
-                    child: Text(
-                      d.isOnline
-                          ? d.name
-                          : '${d.name} (${s.deviceOffline})',
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  ),
                 for (final d in _localDeviceOptions)
                   ShadOption(
                     value: d.deviceId,
@@ -827,19 +809,12 @@ class _QuickDownloadFormState extends State<QuickDownloadForm> {
                 if (value.isEmpty) {
                   name = s.thisDevice;
                 } else {
-                  final cloudDevice = widget.host.devices
-                      .where((d) => d.deviceId == value)
-                      .firstOrNull;
                   final localDevice = _localDeviceOptions
                       .where((d) => d.deviceId == value)
                       .firstOrNull;
-                  name = cloudDevice?.name ?? localDevice?.name ?? value;
+                  name = localDevice?.name ?? value;
                 }
-                return Text(
-                  name,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                );
+                return Text(name, overflow: TextOverflow.ellipsis, maxLines: 1);
               },
               onChanged: (id) {
                 if (id == null) return;
@@ -954,8 +929,8 @@ class _QuickDownloadFormState extends State<QuickDownloadForm> {
                         cursor: SystemMouseCursors.click,
                         child: GestureDetector(
                           onTap: () => setState(
-                            () => _showHttpAuthPassword =
-                                !_showHttpAuthPassword,
+                            () =>
+                                _showHttpAuthPassword = !_showHttpAuthPassword,
                           ),
                           child: Icon(
                             _showHttpAuthPassword

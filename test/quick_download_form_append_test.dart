@@ -25,9 +25,6 @@ class _FakeHost implements QuickDownloadFormHost {
   List<QuickQueueOption> get queues => const [];
 
   @override
-  List<QuickDeviceOption> get devices => const [];
-
-  @override
   int get defaultSegments => 0;
 
   @override
@@ -66,15 +63,13 @@ Widget _wrapForm(QuickDownloadForm form) {
                 color: theme.colorScheme.primary,
                 debugShowCheckedModeBanner: false,
                 home: form,
-                pageRouteBuilder: <T>(
-                  RouteSettings settings,
-                  WidgetBuilder builder,
-                ) {
-                  return PageRouteBuilder<T>(
-                    settings: settings,
-                    pageBuilder: (context, _, _) => builder(context),
-                  );
-                },
+                pageRouteBuilder:
+                    <T>(RouteSettings settings, WidgetBuilder builder) {
+                      return PageRouteBuilder<T>(
+                        settings: settings,
+                        pageBuilder: (context, _, _) => builder(context),
+                      );
+                    },
               ),
             ),
           ),
@@ -165,9 +160,7 @@ void main() {
       );
     });
 
-    testWidgets('混合追加：新 URL 与已存在 URL 并存时，只追加新条目、计数只算新条目', (
-      tester,
-    ) async {
+    testWidgets('混合追加：新 URL 与已存在 URL 并存时，只追加新条目、计数只算新条目', (tester) async {
       final controller = await _pumpForm(
         tester,
         initialUrl: 'https://example.com/a.zip',

@@ -363,10 +363,7 @@ export type WsServerMsg =
   | { type: 'hlsSelectionRequest'; taskId: string; options: HlsQualityOption[] }
   | { type: 'btSelectionRequest'; taskId: string; files: BtFileEntry[] }
   | { type: 'resolveVariantRequest'; taskId: string; defaultIndex: number; options: ResolveVariantOption[] }
-  | { type: 'pluginsChanged' }
-  | { type: 'pluginAutoDisabled'; identity: string; reason: string }
   | { type: 'duplicateTorrent'; taskId: string; existingTaskId: string; existingName: string }
-  | { type: 'pluginHookActivity'; taskId: string; pluginId: string; running: boolean }
   | { type: 'componentProgress'; component: string; downloadedBytes: number; totalBytes: number }
   | { type: 'componentResult'; component: string; ok: boolean; message: string }
   | { type: 'linkIncomingPairing'; sessionId: string; sas: string; name: string; platform: string }
@@ -597,75 +594,6 @@ export interface InstallFfmpegRequest {
 }
 
 export type ConfigMap = Record<string, string>
-
-// ---- 插件系统 ----
-
-export type SettingValueType = 'string' | 'number' | 'boolean'
-export type SettingWidget = 'text' | 'password' | 'textarea' | 'select' | 'toggle' | 'number' | 'folder'
-export type PluginDisabledReason = 'None' | 'Manual' | 'CircuitBreaker'
-
-export interface SettingOptionDto {
-  value: string
-  label: string
-}
-
-export interface SettingFieldDto {
-  key: string
-  title: string
-  description: string
-  type: SettingValueType
-  widget: SettingWidget
-  options: SettingOptionDto[]
-  default: string | null
-  required: boolean
-  min: number | null
-  max: number | null
-  pattern: string | null
-  /** 辅助脚本（非空时字段旁渲染复制按钮，仅复制文本、绝不执行）。旧服务端可能缺省。 */
-  helperScript?: string | null
-  /** 辅助脚本按钮文案（空则用默认文案）。 */
-  helperLabel?: string | null
-}
-
-export interface PluginDto {
-  identity: string
-  name: string
-  version: string
-  description: string
-  homepage: string
-  enabled: boolean
-  devMode: boolean
-  disabledReason: PluginDisabledReason
-  settings: SettingFieldDto[]
-  settingsValues: Record<string, string>
-  /** manifest 声明的能力权限（如 ["ffmpeg"]），旧服务端可能缺省。 */
-  permissions?: string[]
-}
-
-export interface InstalledPlugin {
-  identity: string
-  /** 插件声明权限所需但尚未安装的基础组件（"ffmpeg"/"ytdlp"），提醒式。 */
-  missingComponents?: string[]
-}
-
-/** 插件市场索引条目（浏览/安装用）。yanked 值域：none/deprecated/vulnerable/malicious。 */
-export interface MarketEntry {
-  pluginId: string
-  version: string
-  sequence: number
-  contentHash: string
-  minAppVersion: string
-  name: string
-  description: string
-  author: string
-  homepage: string
-  mirrors: string[]
-  publishTime: string
-  yanked: string
-  tags: string[]
-  /** manifest 声明的能力权限（如 ["ffmpeg"]），旧索引可能缺省。 */
-  permissions?: string[]
-}
 
 // ── Webhook 任务事件推送（免费自托管 BYOE）──────────────────────────
 

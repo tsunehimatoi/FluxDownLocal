@@ -134,7 +134,11 @@ List<TaskColumnId> effectiveColumns(ViewPrefs prefs) {
 // =============================================================================
 
 /// 状态 → 语义色（design-proto-spec §5 `.ficon.is-*`/`statusCell` 配色表）。
-Color taskStatusColor(TaskStatus status, AppColors c, {bool fileMissing = false}) {
+Color taskStatusColor(
+  TaskStatus status,
+  AppColors c, {
+  bool fileMissing = false,
+}) {
   switch (status) {
     case TaskStatus.downloading:
     case TaskStatus.pending:
@@ -148,7 +152,7 @@ Color taskStatusColor(TaskStatus status, AppColors c, {bool fileMissing = false}
     case TaskStatus.error:
       return AppColors.red;
     case TaskStatus.canceled:
-      // 已取消：中性弱化色，非错误——只可能是其他设备取消的远程任务镜像
+      // 已取消：中性弱化色，非错误。
       return c.textMuted;
   }
 }
@@ -156,8 +160,9 @@ Color taskStatusColor(TaskStatus status, AppColors c, {bool fileMissing = false}
 /// 状态图标（design-proto-spec §5 `ST[st].icon`：dl=down,pend=clock,
 /// pause=pause,err=alert,done=check；preparing/resuming 视觉上归入下载中）。
 IconData taskStatusIcon(TaskStatus status) => switch (status) {
-  TaskStatus.downloading || TaskStatus.preparing || TaskStatus.resuming =>
-    LucideIcons.arrowDown,
+  TaskStatus.downloading ||
+  TaskStatus.preparing ||
+  TaskStatus.resuming => LucideIcons.arrowDown,
   TaskStatus.pending => LucideIcons.clock,
   TaskStatus.paused => LucideIcons.pause,
   TaskStatus.error => LucideIcons.alertCircle,
@@ -273,8 +278,10 @@ final Map<TaskColumnId, TaskColumnDef> kTaskColumns = {
     id: TaskColumnId.created,
     width: 104,
     label: (s) => s.colCreated,
-    cellBuilder: (context, task) =>
-        _tnumCenter(formatWhen(task.createdAt), AppColors.of(context).textMuted),
+    cellBuilder: (context, task) => _tnumCenter(
+      formatWhen(task.createdAt),
+      AppColors.of(context).textMuted,
+    ),
   ),
   TaskColumnId.protocol: TaskColumnDef(
     id: TaskColumnId.protocol,

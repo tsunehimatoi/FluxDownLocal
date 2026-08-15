@@ -8,7 +8,7 @@ import '../services/log_service.dart';
 
 /// RSS 订阅状态（订阅列表 + 当前选中订阅的条目流 + feed 验证结果）。
 ///
-/// 照 [PluginProvider] 的 ChangeNotifier + rinf 信号订阅模式：构造时建立订阅，
+/// 使用 ChangeNotifier + rinf 信号订阅模式：构造时建立订阅，
 /// 读经 `Request*` 主动拉取，写操作一律单向 `.sendSignalToRust()`，结果经
 /// [AllRssSources] / [RssItemsSnapshot] / [RssValidateResult] 异步回流。
 ///
@@ -88,7 +88,8 @@ class RssProvider extends ChangeNotifier {
   bool get hasSources => _sources.isNotEmpty;
 
   /// 抓取异常的订阅数（`lastError` 非空），供状态栏汇总。
-  int get unhealthyCount => _sources.where((s) => s.lastError.isNotEmpty).length;
+  int get unhealthyCount =>
+      _sources.where((s) => s.lastError.isNotEmpty).length;
 
   String get selectedSourceId => _selectedSourceId;
 
@@ -327,8 +328,11 @@ class RssProvider extends ChangeNotifier {
         .where((i) => i.guid == guid)
         .firstOrNull;
     _downloadingItems[key] = current == null ? '' : _itemStamp(current);
-    SetRssItemAction(sourceId: sourceId, guid: guid, action: 0)
-        .sendSignalToRust();
+    SetRssItemAction(
+      sourceId: sourceId,
+      guid: guid,
+      action: 0,
+    ).sendSignalToRust();
     _safeNotifyListeners();
     // 兜底解除：种子抓取失败时条目会原样留在 New（引擎刻意不把 .torrent 当
     // 普通文件下下来），没有任何状态变化可等——不能让这一行永远转圈。
@@ -354,14 +358,20 @@ class RssProvider extends ChangeNotifier {
 
   /// 忽略一个条目。
   void ignoreItem(String sourceId, String guid) {
-    SetRssItemAction(sourceId: sourceId, guid: guid, action: 1)
-        .sendSignalToRust();
+    SetRssItemAction(
+      sourceId: sourceId,
+      guid: guid,
+      action: 1,
+    ).sendSignalToRust();
   }
 
   /// 把该订阅的全部「新」条目标记为已读。
   void markAllRead(String sourceId) {
-    SetRssItemAction(sourceId: sourceId, guid: '', action: 2)
-        .sendSignalToRust();
+    SetRssItemAction(
+      sourceId: sourceId,
+      guid: '',
+      action: 2,
+    ).sendSignalToRust();
   }
 }
 

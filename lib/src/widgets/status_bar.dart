@@ -10,7 +10,6 @@ import '../theme/app_colors.dart';
 import '../theme/app_metrics.dart';
 import '../services/shutdown_service.dart';
 import '../services/system_proxy_status.dart';
-import 'feedback_dialog.dart';
 
 // 预设限速值（label 显示用，kbs 为 KB/s）
 const _kPresets = [
@@ -76,8 +75,8 @@ class _StatusBarState extends State<StatusBar> {
     final uploadBytes = widget.settingsProvider.uploadLimitBytes;
     _lastKnownUploadBytes = uploadBytes;
     _uploadCustomController.text = _kbsText(uploadBytes);
-    _shutdownMinutesController.text =
-        ShutdownService.instance.delayMinutes.toString();
+    _shutdownMinutesController.text = ShutdownService.instance.delayMinutes
+        .toString();
     widget.settingsProvider.addListener(_onSettingsChanged);
     _popoverController.addListener(_onPopoverChanged);
     _shutdownPopoverController.addListener(_onShutdownPopoverChanged);
@@ -424,30 +423,6 @@ class _StatusBarState extends State<StatusBar> {
                 s: s,
                 c: c,
               ),
-              const SizedBox(width: 12),
-              Container(width: 1, height: 12, color: c.border),
-              const SizedBox(width: 12),
-              // 反馈按钮
-              GestureDetector(
-                onTap: () => showFeedbackDialog(context),
-                child: MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: Row(
-                    children: [
-                      Icon(
-                        LucideIcons.messageSquarePlus,
-                        size: 11,
-                        color: c.textMuted,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        s.feedback,
-                        style: TextStyle(fontSize: 10.5, color: c.textMuted),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ],
           ),
         );
@@ -749,9 +724,7 @@ class _SpeedLimitPopoverContent extends StatelessWidget {
                     child: ShadInput(
                       controller: controller,
                       keyboardType: TextInputType.number,
-                      inputFormatters: [
-                        FilteringTextInputFormatter.digitsOnly,
-                      ],
+                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                       placeholder: Text(s.statusSpeedLimitHint),
                       onSubmitted: (_) => onSectionCustom(),
                     ),
@@ -976,8 +949,7 @@ class _ShutdownPopoverContent extends StatelessWidget {
               spacing: 5,
               runSpacing: 5,
               children: _kShutdownPresets.map((minutes) {
-                final isSelected =
-                    svc.isArmed && svc.delayMinutes == minutes;
+                final isSelected = svc.isArmed && svc.delayMinutes == minutes;
                 return MouseRegion(
                   cursor: canInteract
                       ? SystemMouseCursors.click
@@ -1007,8 +979,8 @@ class _ShutdownPopoverContent extends StatelessWidget {
                           color: isSelected
                               ? const Color(0xFFFFFFFF)
                               : canInteract
-                                  ? c.textSecondary
-                                  : c.textDisabled,
+                              ? c.textSecondary
+                              : c.textDisabled,
                           fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),

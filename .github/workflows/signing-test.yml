@@ -125,7 +125,7 @@ jobs:
 
       # ── Build ──
       - name: Build Flutter Windows app
-        run: flutter build windows --release --build-name=${{ steps.version.outputs.CLEAN_VERSION }} --build-number=1 --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }} --dart-define=ANALYTICS_APP_KEY=${{ secrets.ANALYTICS_APP_KEY }} --dart-define=FLUXCLOUD_BASE_URL=${{ secrets.FLUXCLOUD_BASE_URL }} --dart-define=STATS_FIRST_COMMIT_DATE=${{ steps.stats.outputs.FIRST_COMMIT_DATE }} --dart-define=STATS_RELEASE_COUNT=${{ steps.stats.outputs.RELEASE_COUNT }} --dart-define=STATS_COMMIT_COUNT=${{ steps.stats.outputs.COMMIT_COUNT }}
+        run: flutter build windows --release --build-name=${{ steps.version.outputs.CLEAN_VERSION }} --build-number=1 --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }}
 
       - name: Normalize build output path for ARM64
         if: matrix.arch == 'arm64'

@@ -20,10 +20,9 @@
 | **新增引擎事件** | `events.rs` `EngineEvent` 变体 + `EventSink`；`rinf_sink`/`ws_hub` 各接线一处 |
 | **新增 webhook 事件** | `engine/src/webhook.rs` 的 `WebhookEventKind` 加变体（`wire()`/`title()` 同步）+ 在 `download_manager` 对应生命周期点位 `self.webhook.emit(...)`；UI 侧事件芯片自动跟随 `WebhookEvents.all`（Dart）/ `WEBHOOK_EVENTS`（TS），**三处 wire 名必须逐字一致** |
 | **新增 webhook 服务预设** | 只改 `engine/src/webhook.rs`：`Preset` 加变体 + `wire`/`label`/`content_type`/`escape`/`default_template`/`url_placeholder` 六个 match 各补一臂。模板由引擎下发，UI 零改动（只有品牌字标 `WebhookPresetMark`/`PRESET_MARKS` 想美化时才加） |
-| **新增引擎设置** | `settings_provider.dart` 加字段+setter(`_saveToRust`)+load switch case；要跨设备同步则 `sync_catalog.dart` 加 `SyncEntry`（否则默认设备本地） |
+| **新增引擎设置** | `settings_provider.dart` 加字段+setter(`_saveToRust`)+load switch case；设置保持设备本地。 |
 | **新增主题预设/度量** | `flux_theme_tokens.dart` 加 `BuiltinThemeId`+工厂+`builtinThemes` 项 / `flux_metric_tokens.dart` 加 clamped 字段 + `app_metrics.dart` 暴露 |
 | **新增 NAS/分发目标** | `packaging/<target>/build_*.sh` 复用（**单个** server 二进制 + `FLUXDOWN_*`；Web UI 已编译期内嵌，别再往包里塞 `web/` 目录）布局 → 接入 release.yml `build-server-nas-packages` |
 | **新增发布组件** | `changes` job 加路径→输出映射 + 一对 `build-*`/`release-*` job（各自组件 tag） |
 | **新增文档页** | `content/docs/{en,zh}/<section>/<page>.md`（section 加进 `content.config` 枚举，zh 跑 `docs:hash`） |
-| **新增自更新平台策略** | `fluxdown_updater` Action + `hub/updater.rs` |
 | **新增 UI 文案** | 只补 **en + zh 基线对**：App `assets/i18n/{en,zh}.json` + `lib/src/i18n/translations.dart` 加 getter；web `web/src/lib/locales/{en,zh}.json`；官网 `website/src/lib/locales/{en,zh-CN}.json`；扩展 `fluxDown/utils/locales/{zh-CN,en}.ts`（`MessageKey` 由 zh-CN 推导）。**社区语言（`ja.json` 等）不碰**——Weblate 维护，运行时键级回退英文 |

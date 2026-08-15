@@ -52,7 +52,7 @@ export function fmtRelativeUnix(unixSecs: number): string {
 }
 
 /** ISO 时间字符串 → 相对时间（"3 分钟前"）；30 天以上回退本地日期，非法输入返回 '—'。
- *  用于 FluxCloud 设备列表的 lastSeenAt 等 ISO8601 时间戳（不同于 fmtTime 的 unix 秒）。 */
+ *  用于设备列表的 lastSeenAt 等 ISO8601 时间戳（不同于 fmtTime 的 unix 秒）。 */
 export function fmtRelativeTime(iso: string): string {
   const ms = Date.parse(iso)
   if (!Number.isFinite(ms)) return '—'

@@ -5,7 +5,6 @@ import '../i18n/locale_provider.dart';
 import '../models/download_controller.dart';
 import '../models/download_queue.dart';
 import '../models/settings_provider.dart';
-import '../services/cloud/cloud_auth_service.dart';
 import '../services/file_picker_service.dart';
 import '../services/quick_download_submitter.dart';
 import '../services/resolve_preview_client.dart';
@@ -137,7 +136,7 @@ class _QuickDownloadDialogShellState extends State<_QuickDownloadDialogShell> {
   Future<void> _onSubmit(QuickDownloadFormResult result) async {
     // 单条 http(s) 链接先探测多文件清单。三种情况除外：
     // - 音视频轨对请求：清单建组无法承载 audioUrl 合并语义，维持原单任务路径；
-    // - 已选目标设备（云端或本地配对设备）：下发的语义是「把这条原始链接交给
+    // - 已选局域网设备：下发的语义是「把这条原始链接交给
     //   那台设备去处理」，本机抢先预解析只会把任务建到本机、静默吞掉下发意图；
     //   清单该由目标设备自己解析。
     final entries = parseQuickDownloadEntries(result.urlText);
@@ -235,7 +234,9 @@ class _QuickDownloadDialogShellState extends State<_QuickDownloadDialogShell> {
           if (widget.fileSize > 0 && widget.mimeType.isNotEmpty)
             const SizedBox(width: 6),
           if (widget.mimeType.isNotEmpty)
-            Flexible(child: QuickInfoTag(text: widget.mimeType, c: c)),
+            Flexible(
+              child: QuickInfoTag(text: widget.mimeType, c: c),
+            ),
         ],
       ),
       description: Text(
@@ -280,17 +281,6 @@ class _MainWindowFormHost implements QuickDownloadFormHost {
         queueId: q.queueId,
         name: q.name,
         defaultSegments: q.defaultSegments,
-      ),
-  ];
-
-  @override
-  List<QuickDeviceOption> get devices => [
-    for (final d in CloudAuthService.instance.remoteDevices)
-      QuickDeviceOption(
-        deviceId: d.deviceId,
-        name: d.name,
-        platform: d.platform,
-        isOnline: d.isOnline,
       ),
   ];
 

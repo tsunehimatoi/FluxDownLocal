@@ -234,7 +234,7 @@ jobs:
 
       - name: Build Flutter Windows app
         # Windows 使用 native-tls（Schannel），无需 aws-lc-sys，无需任何额外 TLS 环境变量
-        run: flutter build windows --release --build-name=${{ steps.version.outputs.CLEAN_VERSION }} --build-number=1 --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }} --dart-define=ANALYTICS_APP_KEY=${{ secrets.ANALYTICS_APP_KEY }} --dart-define=FLUXCLOUD_BASE_URL=${{ secrets.FLUXCLOUD_BASE_URL }} --dart-define=STATS_FIRST_COMMIT_DATE=${{ steps.stats.outputs.FIRST_COMMIT_DATE }} --dart-define=STATS_RELEASE_COUNT=${{ steps.stats.outputs.RELEASE_COUNT }} --dart-define=STATS_COMMIT_COUNT=${{ steps.stats.outputs.COMMIT_COUNT }}
+        run: flutter build windows --release --build-name=${{ steps.version.outputs.CLEAN_VERSION }} --build-number=1 --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }}
 
       # ── ARM64: Flutter 在 ARM64 runner 上以 x64 仿真运行，输出到 build\windows\x64
       #    但后续步骤（Inno Setup / portable zip）需要 build\windows\arm64 ──
@@ -247,7 +247,7 @@ jobs:
             Write-Host "Renamed build\windows\x64 -> build\windows\arm64"
           }
 
-      # ── SignPath 签名 Round 1: 应用 exe（flux_down / fluxdown_nmh / fluxdown_updater）──
+      # ── SignPath 签名 Round 1: 应用 exe（flux_down / fluxdown_nmh）──
       # 必须在 Inno Setup 打包与 portable zip 之前完成，
       # 保证安装器内嵌与便携版解压出的 exe 均已带签名。
       - name: Collect unsigned app executables
@@ -282,7 +282,7 @@ jobs:
           Copy-Item "build\signing\app-signed\*.exe" "build\windows\${{ matrix.arch }}\runner\Release\" -Force
 
       # ── Inno Setup installer ──
-      # NOTE: fluxdown_nmh.exe and fluxdown_updater.exe are built automatically
+      # NOTE: fluxdown_nmh.exe is built automatically
       # by CMake custom targets defined in windows/CMakeLists.txt during flutter build.
       - name: Ensure Inno Setup is installed
         if: matrix.arch == 'arm64'
@@ -709,9 +709,9 @@ jobs:
 
       # ── Build ──
       - name: Build Flutter Linux app
-        run: flutter build linux --release --build-name=${{ steps.version.outputs.CLEAN_VERSION }} --build-number=1 --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }} --dart-define=ANALYTICS_APP_KEY=${{ secrets.ANALYTICS_APP_KEY }} --dart-define=FLUXCLOUD_BASE_URL=${{ secrets.FLUXCLOUD_BASE_URL }} --dart-define=STATS_FIRST_COMMIT_DATE=${{ steps.stats.outputs.FIRST_COMMIT_DATE }} --dart-define=STATS_RELEASE_COUNT=${{ steps.stats.outputs.RELEASE_COUNT }} --dart-define=STATS_COMMIT_COUNT=${{ steps.stats.outputs.COMMIT_COUNT }}
+        run: flutter build linux --release --build-name=${{ steps.version.outputs.CLEAN_VERSION }} --build-number=1 --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }}
 
-      # NOTE: fluxdown_nmh and fluxdown_updater are built automatically
+      # NOTE: fluxdown_nmh is built automatically
       # by CMake custom targets defined in linux/CMakeLists.txt during flutter build.
 
       # ── Package tar.gz（命名目录后压缩，解压得 FluxDown-x.y.z-linux-x64/）──
@@ -1018,14 +1018,9 @@ jobs:
           flutter build macos --release \
             --build-name=${{ steps.version.outputs.CLEAN_VERSION }} \
             --build-number=1 \
-            --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }} \
-            --dart-define=ANALYTICS_APP_KEY=${{ secrets.ANALYTICS_APP_KEY }} \
-            --dart-define=FLUXCLOUD_BASE_URL=${{ secrets.FLUXCLOUD_BASE_URL }} \
-            --dart-define=STATS_FIRST_COMMIT_DATE=${{ steps.stats.outputs.FIRST_COMMIT_DATE }} \
-            --dart-define=STATS_RELEASE_COUNT=${{ steps.stats.outputs.RELEASE_COUNT }} \
-            --dart-define=STATS_COMMIT_COUNT=${{ steps.stats.outputs.COMMIT_COUNT }}
+            --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }}
 
-      # NOTE: fluxdown_nmh and fluxdown_updater are built automatically
+      # NOTE: fluxdown_nmh is built automatically
       # by Xcode shell script build phases defined in macos/Runner.xcodeproj during flutter build.
 
       # ── Package tar.gz portable ──
@@ -1207,16 +1202,14 @@ jobs:
           flutter build apk --release --split-per-abi \
             --build-name=${{ steps.version.outputs.CLEAN_VERSION }} \
             --build-number=${{ steps.vercode.outputs.CODE }} \
-            --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }} \
-            --dart-define=FLUXCLOUD_BASE_URL=${{ secrets.FLUXCLOUD_BASE_URL }}
+            --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }}
 
       - name: Build universal APK
         run: |
           flutter build apk --release \
             --build-name=${{ steps.version.outputs.CLEAN_VERSION }} \
             --build-number=${{ steps.vercode.outputs.CODE }} \
-            --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }} \
-            --dart-define=FLUXCLOUD_BASE_URL=${{ secrets.FLUXCLOUD_BASE_URL }}
+            --dart-define=APP_VERSION=${{ steps.version.outputs.VERSION }}
 
       # ── 收集并统一命名（Flutter 输出到 build/app/outputs/flutter-apk/）──
       - name: Collect and rename APKs
@@ -1258,8 +1251,6 @@ jobs:
       - name: Build web SPA
         working-directory: web
         run: bun run build
-        env:
-          VITE_FLUXCLOUD_BASE_URL: ${{ secrets.FLUXCLOUD_BASE_URL }}
 
       - name: Upload webroot artifact
         uses: actions/upload-artifact@v4
@@ -1346,7 +1337,6 @@ jobs:
       - name: Build server binary
         env:
           FLUXDOWN_SERVER_VERSION: ${{ steps.version.outputs.VERSION }}
-          FLUXDOWN_ANALYTICS_APP_KEY: ${{ secrets.ANALYTICS_APP_KEY }}
           FLUXDOWN_EMBED_WEBROOT: ${{ github.workspace }}/webroot
         run: cargo build --release --locked -p fluxdown_server --target ${{ matrix.target }}
 
@@ -1683,7 +1673,6 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             FLUXDOWN_SERVER_VERSION=${{ steps.version.outputs.VERSION }}
-            FLUXDOWN_ANALYTICS_APP_KEY=${{ secrets.ANALYTICS_APP_KEY }}
           cache-from: type=gha,scope=server
           cache-to: type=gha,scope=server,mode=max
 

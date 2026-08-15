@@ -35,7 +35,6 @@ const en: Record<MessageKey, string> = {
   "settings.interceptMagnetHint":
     "When off, magnet links go to the system default handler (e.g. qBittorrent)",
   "settings.altClickHint": "Alt+Shift+D toggles interception",
-  "settings.dotVisible": "Floating Ball",
 
   // Remote download source
   "remote.title": "Remote Download Source",
@@ -150,55 +149,6 @@ const en: Record<MessageKey, string> = {
   "notify.appUnavailableDetail":
     "Temporarily using the browser's built-in download. Make sure the FluxDown desktop app is running; interception will resume automatically.",
 
-  // Resource sniffer & panel
-  "sniffer.title": "Resource Sniffer",
-  "sniffer.resourceSniffing": "Resource Sniffing",
-  "sniffer.resourceSniffingHint":
-    "Detect downloadable resources; turning it off hides in-page buttons (reload after re-enabling)",
-  "sniffer.showFloatingButton": "Video Float Button",
-  "sniffer.showFloatingButtonHint":
-    "Show quick download button on video elements",
-  "sniffer.showResourcePanel": "Resource Panel",
-  "sniffer.showResourcePanelHint":
-    "Show detected resources panel at page bottom",
-  "sniffer.sniffImages": "Image Sniffing",
-  "sniffer.sniffImagesHint": "Detect large images on web pages (>100KB)",
-
-  // Resource panel (content script)
-  "panel.selectAll": "Select All",
-  "panel.batchDownload": "Download",
-  "panel.resources": "resources",
-  "panel.empty": "No downloadable resources detected",
-  "panel.collapse": "Collapse",
-  "panel.more": "{count} more",
-  "panel.hideDot": "Hide dot",
-  "panel.download": "Download",
-  "panel.floatDL": "DL",
-  "panel.tabAll": "All",
-  "panel.tabVideo": "Video",
-  "panel.tabAudio": "Audio",
-  "panel.tabDocs": "Docs",
-  "panel.tabArchive": "Archive",
-  "panel.tabStream": "Stream",
-  "panel.tabSubtitle": "Subtitle",
-  "panel.tabMagnet": "Magnet",
-  "panel.tabOther": "Other",
-  "panel.qualityPickerTitle": "Select Quality",
-  "panel.trackVideo": "Video Track",
-  "panel.trackAudio": "Audio Track",
-  "panel.qualityUnknown": "Unknown Quality",
-  "panel.previewTitle": "Preview",
-  "panel.previewClose": "Close preview",
-  "panel.previewFailed": "Preview failed to load, may require login or be blocked by CORS",
-  "panel.previewUnsupported": "Preview not supported for this type",
-  "panel.previewFragmentUnsupported": "This fragment can't be previewed on its own; merge it first",
-  "panel.previewHlsUnsupported": "This browser can't play HLS directly. View it on the source page or open it with a player after downloading",
-  "panel.previewDashUnsupported": "This browser can't play this DASH stream directly. View it on the source page or open it with a player after downloading",
-  "panel.previewLimited": "Preview limited",
-  "panel.previewLimitedHint": "Browser preview failed due to CORS/login limits, but download may still succeed (the engine sends your session)",
-  "panel.clearFailed": "Clear failed previews",
-  "panel.clearFailedHint": "Hide resources that failed to preview (doesn't affect others, and doesn't mean they can't be downloaded)",
-
   // Shortcut toggle
   "shortcut.toggleTitle": "Intercept Toggle",
   "shortcut.interceptOn": "Download interception enabled",
@@ -216,11 +166,7 @@ const en: Record<MessageKey, string> = {
 
   // Top tabs (popup)
   "popup.tabs.tasks": "Tasks",
-  "popup.tabs.resources": "Resources",
   "popup.tabs.settings": "Settings",
-
-  // Resource panel (popup)
-  "popup.resources.empty": "No resources sniffed on this page",
 
   // Task panel (popup)
   "popup.tasks.downloading": "Downloading",

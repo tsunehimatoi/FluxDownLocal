@@ -23,7 +23,7 @@ const kYtdlpManualPathConfigKey = 'component.ytdlp.path';
 
 /// 组件（ffmpeg/yt-dlp 等）状态管理的公共基类。
 ///
-/// 复刻 [PluginProvider]（见 `plugin_provider.dart`）的 ChangeNotifier +
+/// 通过 ChangeNotifier +
 /// rinf 信号订阅模式：`requestStatus()`/`requestVersions()` 主动拉取，
 /// 写操作（install/uninstall/saveManualPath）均为单向
 /// `.sendSignalToRust()`，结果经具体组件的信号类型异步回流，由子类转换
@@ -225,10 +225,7 @@ abstract class ComponentController extends ChangeNotifier {
   }
 
   @protected
-  void applyProgress({
-    required int downloadedBytes,
-    required int totalBytes,
-  }) {
+  void applyProgress({required int downloadedBytes, required int totalBytes}) {
     _installing = true;
     _downloadedBytes = downloadedBytes;
     _totalBytes = totalBytes;
@@ -471,8 +468,7 @@ class YtdlpController extends ComponentController {
   void sendRequestStatus() => const RequestYtdlpStatus().sendSignalToRust();
 
   @override
-  void sendRequestVersions() =>
-      const RequestYtdlpVersions().sendSignalToRust();
+  void sendRequestVersions() => const RequestYtdlpVersions().sendSignalToRust();
 
   @override
   void sendInstall(String version) =>

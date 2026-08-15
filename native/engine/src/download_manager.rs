@@ -2341,36 +2341,6 @@ impl DownloadManager {
         self.cdn_max_nodes = v.clamp(0, crate::cdn::MAX_NODES_LIMIT as i32);
     }
 
-    /// Update the cloud-issued DoH resolver endpoint list (config
-    /// `cdn_resolver_endpoints`，JSON 字符串数组)。校验与回退语义见
-    /// [`crate::cdn::resolver::set_dynamic_endpoints`]。
-    pub fn set_cdn_resolver_endpoints(&mut self, json: &str) {
-        crate::cdn::resolver::set_dynamic_endpoints(json);
-    }
-
-    /// Update the cloud hints base origin (config `cdn_hints_base`，空 =
-    /// 禁用；仅接受 https)。
-    pub fn set_cdn_hints_base(&mut self, base: &str) {
-        crate::cdn::hints::set_base(base);
-    }
-
-    /// Update the cloud-issued ECS probe subnets (config `cdn_ecs_subnets`，
-    /// JSON 字符串数组，IPv4 CIDR)。
-    pub fn set_cdn_ecs_subnets(&mut self, json: &str) {
-        crate::cdn::resolver::set_ecs_subnets(json);
-    }
-
-    /// Dart 遥测上报完成（config `cdn_pending_reports` 写空）→ 清空引擎侧
-    /// 待上传样本缓冲。
-    pub fn clear_cdn_pending_reports(&mut self) {
-        crate::cdn::telemetry::clear();
-    }
-    /// 同步落盘遥测缓冲（Dart `RequestConfig` 读 config 前由宿主调用，
-    /// 保证上报读到全部内存样本，见 telemetry::flush 文档）。
-    pub async fn flush_cdn_pending_reports(&self) {
-        crate::cdn::telemetry::flush(&self.db).await;
-    }
-
     /// Update whether completed downloads adopt the server-provided
     /// `Last-Modified` timestamp as the file's modification time
     /// (config `use_server_time`). Takes effect for downloads started

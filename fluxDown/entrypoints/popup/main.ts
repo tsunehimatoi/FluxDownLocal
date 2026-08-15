@@ -3,7 +3,7 @@
  *
  * 功能：
  * - 连接状态显示（头部徽标，逻辑不变）
- * - 高频开关（下载拦截 / 悬浮球）
+ * - 高频下载设置
  * - 任务面板：轮询 NMH 任务列表并增量渲染（下载中 / 最近完成）
  * - App 未运行时的空态引导（一键启动）
  * - 空闲态下的快捷 URL 下载
@@ -25,11 +25,8 @@ import { initI18n, applyI18nToDOM, t, getLocale, saveLocale } from '@/utils/i18n
 import { checkFluxDownAvailable } from '@/utils/download-dispatch';
 import { loadSettings, saveSettings } from '@/utils/settings';
 import type { RemoteMode } from '@/utils/settings';
-import type { DetectedResource, ResourceType } from '@/utils/resource-types';
-import { formatFileSize } from '@/utils/resource-types';
 import {
   fileIconKind,
-  resourceIconKind,
   fileIconSvg,
   ICON_CHECK_CIRCLE,
 } from '@/utils/file-icons';
@@ -43,8 +40,6 @@ const enableToggle = $<HTMLInputElement>('#enableToggle');
 const enableToggleLabel = $('#enableToggleLabel')!;
 const protocolToggle = $<HTMLInputElement>('#protocolToggle');
 const protocolHint = $('#protocolHint')!;
-const dotVisibleToggle = $<HTMLInputElement>('#dotVisibleToggle');
-const sniffToggle = $<HTMLInputElement>('#sniffToggle');
 const magnetToggle = $<HTMLInputElement>('#magnetToggle');
 const notifyLocalToggle = $<HTMLInputElement>('#notifyLocalToggle');
 const notifyRemoteToggle = $<HTMLInputElement>('#notifyRemoteToggle');
@@ -83,18 +78,7 @@ const quickDownloadBtn = $<HTMLButtonElement>('#quickDownloadBtn');
 // 顶部 tab
 const topTabs = $('#topTabs')!;
 const paneTasks = $('#paneTasks')!;
-const paneResources = $('#paneResources')!;
 const paneSettings = $('#paneSettings')!;
-const resourceBadge = $('#resourceBadge')!;
-
-// 资源面板
-const resTypeTabsEl = $('#resTypeTabs')!;
-const resEmptyEl = $('#resEmpty')!;
-const resListEl = $('#resList')!;
-const resFooterEl = $('#resFooter')!;
-const resSelectAll = $<HTMLInputElement>('#resSelectAll');
-const resBatchBtn = $<HTMLButtonElement>('#resBatchBtn');
-const resBatchCount = $('#resBatchCount')!;
 
 // ===== 主题管理 =====
 type ThemeMode = 'light' | 'dark' | 'system';
@@ -653,7 +637,7 @@ document.addEventListener('visibilitychange', () => {
 });
 
 // ===== 空态下的快捷 URL 下载 =====
-// 复用 background 现有的手动下载入口（downloadResource），与资源面板/嗅探触发下载走同一条路径。
+// 复用 background 现有的手动下载入口（downloadResource）。
 async function submitQuickDownload(): Promise<void> {
   const url = quickDownloadInput.value.trim();
   if (!url) return;
@@ -695,14 +679,13 @@ quickDownloadInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') void submitQuickDownload();
 });
 
-// ===== 顶部 Tab 切换（任务 / 资源 / 设置） =====
+// ===== 顶部 Tab 切换（任务 / 设置） =====
 
-type PaneKey = 'tasks' | 'resources' | 'settings';
+type PaneKey = 'tasks' | 'settings';
 let activePane: PaneKey = 'tasks';
 
 const PANES: Record<PaneKey, HTMLElement> = {
   tasks: paneTasks,
-  resources: paneResources,
   settings: paneSettings,
 };
 
@@ -717,14 +700,11 @@ function switchPane(pane: PaneKey): void {
   }
   // 统计行属任务范畴，仅在任务 pane 显示（位于 footer，不占内容区）
   statsLine.classList.toggle('hidden', pane !== 'tasks');
-  // 任务轮询只在任务 pane 可见时跑；资源 pane 每次进入取一次新快照
+  // 任务轮询只在任务 pane 可见时运行。
   if (pane === 'tasks') {
     startPolling();
   } else {
     stopPolling();
-  }
-  if (pane === 'resources') {
-    void refreshResources();
   }
 }
 
@@ -732,362 +712,6 @@ topTabs.addEventListener('click', (e) => {
   const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('.top-tab');
   const pane = btn?.dataset.pane as PaneKey | undefined;
   if (pane) switchPane(pane);
-});
-
-// ===== 资源面板（当前活跃 tab 的嗅探结果） =====
-// 与页内浮动面板同一数据源（background resource-store），popup 侧做
-// 轻量列表：类型筛选 + 预览 + 单个/批量下载，选轨等重交互留在页内面板。
-
-/** 与页内面板一致的类型 tab 顺序（无资源的类型不渲染）。 */
-const RES_TABS: Array<{ key: ResourceType | 'all'; i18nKey: string }> = [
-  { key: 'all', i18nKey: 'panel.tabAll' },
-  { key: 'video', i18nKey: 'panel.tabVideo' },
-  { key: 'audio', i18nKey: 'panel.tabAudio' },
-  { key: 'document', i18nKey: 'panel.tabDocs' },
-  { key: 'archive', i18nKey: 'panel.tabArchive' },
-  { key: 'stream', i18nKey: 'panel.tabStream' },
-  { key: 'subtitle', i18nKey: 'panel.tabSubtitle' },
-  { key: 'magnet', i18nKey: 'panel.tabMagnet' },
-  { key: 'other', i18nKey: 'panel.tabOther' },
-];
-
-let resources: DetectedResource[] = [];
-let resActiveType: ResourceType | 'all' = 'all';
-const resSelectedIds = new Set<string>();
-
-async function refreshResources(): Promise<void> {
-  try {
-    const [activeTab] = await browser.tabs.query({ active: true, currentWindow: true });
-    if (!activeTab?.id) {
-      resources = [];
-    } else {
-      const res = (await browser.runtime.sendMessage({
-        action: 'getResources',
-        tabId: activeTab.id,
-      })) as { resources?: DetectedResource[] } | undefined;
-      resources = res?.resources ?? [];
-    }
-  } catch {
-    resources = [];
-  }
-  // 快照刷新后清掉已消失资源的选中态
-  const alive = new Set(resources.map((r) => r.id));
-  for (const id of resSelectedIds) {
-    if (!alive.has(id)) resSelectedIds.delete(id);
-  }
-  if (resources.every((r) => r.type !== resActiveType) && resActiveType !== 'all') {
-    resActiveType = 'all';
-  }
-  updateResourceBadge();
-  renderResTabs();
-  renderResList();
-}
-
-function updateResourceBadge(): void {
-  resourceBadge.textContent = resources.length > 99 ? '99+' : String(resources.length);
-  resourceBadge.classList.toggle('hidden', resources.length === 0);
-}
-
-function filteredResources(): DetectedResource[] {
-  return resActiveType === 'all'
-    ? resources
-    : resources.filter((r) => r.type === resActiveType);
-}
-
-function renderResTabs(): void {
-  resTypeTabsEl.textContent = '';
-  for (const tab of RES_TABS) {
-    const count =
-      tab.key === 'all'
-        ? resources.length
-        : resources.filter((r) => r.type === tab.key).length;
-    if (tab.key !== 'all' && count === 0) continue;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = `res-tab${resActiveType === tab.key ? ' active' : ''}`;
-    btn.textContent = `${t(tab.i18nKey)} ${count}`;
-    btn.addEventListener('click', () => {
-      resActiveType = tab.key;
-      renderResTabs();
-      renderResList();
-    });
-    resTypeTabsEl.appendChild(btn);
-  }
-}
-
-function resDownloadPayload(r: DetectedResource) {
-  return {
-    url: r.url,
-    referrer: r.pageUrl || undefined,
-    filename: r.filename,
-    fileSize: r.size > 0 ? r.size : undefined,
-    mimeType: r.mimeType,
-  };
-}
-
-// ===== 资源预览（与页内浮动面板同规则：图片/音频/视频直链/流分片按类型分发，
-// 原生播放失败诚实降级提示，禁止引入 hls.js） =====
-
-const SVG_PREVIEW =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8Z"/><circle cx="12" cy="12" r="3"/></svg>';
-const SVG_PREVIEW_CLOSE =
-  '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-
-let previewModalEl: HTMLElement | null = null;
-
-/** 仅这些类型显示预览按钮；document/archive/其他不可预览。 */
-function isPreviewable(r: DetectedResource): boolean {
-  return (
-    r.type === 'image' || r.type === 'video' || r.type === 'audio' || r.type === 'stream'
-  );
-}
-
-type PreviewKind = 'image' | 'audio' | 'direct-video' | 'hls' | 'dash' | 'fragment' | 'unsupported';
-
-/** 按结构特征（type + URL 后缀）分发预览渲染方式，不做站点特判。 */
-function previewKind(r: DetectedResource): PreviewKind {
-  const mime = r.mimeType?.toLowerCase() || '';
-  const url = r.url.toLowerCase();
-  if (r.type === 'image' || mime.startsWith('image/')) return 'image';
-  if (r.type === 'stream') {
-    if (url.includes('.m3u8')) return 'hls';
-    if (url.includes('.mpd')) return 'dash';
-    return 'fragment'; // m4s 等分片：单文件常缺 moov/init，原生播放大概率失败
-  }
-  if (r.type === 'audio') return 'audio';
-  if (r.type === 'video') return 'direct-video';
-  return 'unsupported';
-}
-
-function ensurePreviewModal(): HTMLElement {
-  if (previewModalEl) return previewModalEl;
-  const modal = document.createElement('div');
-  modal.className = 'res-preview-modal';
-  modal.innerHTML = `
-    <div class="res-preview-card">
-      <div class="preview-header">
-        <span class="preview-title"></span>
-        <button type="button" class="preview-close" title="${t('panel.previewClose')}">${SVG_PREVIEW_CLOSE}</button>
-      </div>
-      <div class="preview-body"></div>
-    </div>
-  `;
-  // 点遮罩关闭；点卡片内部（含控件交互）不关闭
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) closePreview();
-  });
-  modal.querySelector('.preview-close')?.addEventListener('click', closePreview);
-  document.body.appendChild(modal);
-  previewModalEl = modal;
-  return modal;
-}
-
-/** 用降级提示替换预览区内容（不黑屏、不假装能播放）。 */
-function showPreviewFallback(bodyEl: HTMLElement, message: string): void {
-  bodyEl.textContent = '';
-  const fb = document.createElement('div');
-  fb.className = 'preview-fallback';
-  fb.textContent = message;
-  bodyEl.appendChild(fb);
-}
-
-/** 打开预览弹层：按资源类型分发渲染，原生播放失败诚实降级。 */
-function openPreview(r: DetectedResource): void {
-  const modal = ensurePreviewModal();
-  const titleEl = modal.querySelector('.preview-title') as HTMLElement;
-  const bodyEl = modal.querySelector('.preview-body') as HTMLElement;
-  titleEl.textContent = r.filename || r.url;
-  bodyEl.textContent = '';
-
-  const kind = previewKind(r);
-  if (kind === 'image') {
-    const img = document.createElement('img');
-    img.className = 'preview-media';
-    img.addEventListener('load', () => {
-      const hint = document.createElement('div');
-      hint.className = 'preview-hint';
-      hint.textContent = `${img.naturalWidth} × ${img.naturalHeight}`;
-      bodyEl.appendChild(hint);
-    });
-    img.addEventListener('error', () => showPreviewFallback(bodyEl, t('panel.previewFailed')));
-    img.src = r.url;
-    bodyEl.appendChild(img);
-  } else if (kind === 'audio') {
-    const audio = document.createElement('audio');
-    audio.className = 'preview-media';
-    audio.controls = true;
-    audio.addEventListener('error', () => showPreviewFallback(bodyEl, t('panel.previewFailed')));
-    audio.src = r.url;
-    bodyEl.appendChild(audio);
-  } else if (kind === 'direct-video') {
-    const video = document.createElement('video');
-    video.className = 'preview-media';
-    video.controls = true;
-    video.autoplay = true;
-    video.muted = true;
-    video.addEventListener('error', () => showPreviewFallback(bodyEl, t('panel.previewFailed')));
-    video.src = r.url;
-    bodyEl.appendChild(video);
-  } else if (kind === 'fragment' || kind === 'hls' || kind === 'dash') {
-    // m4s 分片 / hls / dash：浏览器原生尝试，失败诚实降级（禁止引入 hls.js）
-    const video = document.createElement('video');
-    video.className = 'preview-media';
-    video.controls = true;
-    const fallbackMsg =
-      kind === 'hls' ? t('panel.previewHlsUnsupported')
-      : kind === 'dash' ? t('panel.previewDashUnsupported')
-      : t('panel.previewFragmentUnsupported');
-    video.addEventListener('error', () => showPreviewFallback(bodyEl, fallbackMsg));
-    video.src = r.url;
-    bodyEl.appendChild(video);
-  } else {
-    showPreviewFallback(bodyEl, t('panel.previewUnsupported'));
-  }
-
-  modal.classList.add('visible');
-}
-
-/** 关闭预览弹层，销毁 video/audio 元素释放资源（暂停 + 清空 src）。 */
-function closePreview(): void {
-  if (!previewModalEl) return;
-  previewModalEl.classList.remove('visible');
-  for (const el of previewModalEl.querySelectorAll('video, audio')) {
-    const m = el as HTMLMediaElement;
-    m.pause();
-    m.src = '';
-    m.load();
-  }
-}
-
-// Esc 关闭预览弹层
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && previewModalEl?.classList.contains('visible')) {
-    closePreview();
-  }
-});
-
-function buildResRow(r: DetectedResource): HTMLElement {
-  const row = document.createElement('div');
-  row.className = 'res-row';
-
-  const check = document.createElement('input');
-  check.type = 'checkbox';
-  check.className = 'res-check';
-  check.checked = resSelectedIds.has(r.id);
-  check.addEventListener('change', () => {
-    if (check.checked) resSelectedIds.add(r.id);
-    else resSelectedIds.delete(r.id);
-    updateResBatchBar();
-  });
-  row.appendChild(check);
-
-  const icon = document.createElement('span');
-  const resKind = resourceIconKind(r.type);
-  icon.className = `res-icon icon-${resKind}`;
-  icon.innerHTML = fileIconSvg(resKind, 14);
-  row.appendChild(icon);
-
-  const info = document.createElement('div');
-  info.className = 'res-info';
-  const name = document.createElement('div');
-  name.className = 'res-name';
-  name.textContent = r.filename;
-  name.title = r.url;
-  info.appendChild(name);
-  const size = formatFileSize(r.size);
-  if (size) {
-    const meta = document.createElement('div');
-    meta.className = 'res-meta';
-    meta.textContent = size;
-    info.appendChild(meta);
-  }
-  row.appendChild(info);
-
-  if (isPreviewable(r)) {
-    const pv = document.createElement('button');
-    pv.type = 'button';
-    pv.className = 'res-preview-btn';
-    pv.title = t('panel.previewTitle');
-    pv.innerHTML = SVG_PREVIEW;
-    pv.addEventListener('click', () => openPreview(r));
-    row.appendChild(pv);
-  }
-
-  const dl = document.createElement('button');
-  dl.type = 'button';
-  dl.className = 'res-dl-btn';
-  dl.title = t('popup.quickDownload.button');
-  dl.innerHTML =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
-  dl.addEventListener('click', async () => {
-    dl.disabled = true;
-    try {
-      const res = (await browser.runtime.sendMessage({
-        action: 'downloadResource',
-        ...resDownloadPayload(r),
-      })) as { success?: boolean; message?: string } | undefined;
-      if (res?.success) {
-        showToast(t('popup.quickDownload.sent'));
-      } else {
-        showToast(res?.message || t('popup.quickDownload.failed'), 'error');
-        dl.disabled = false;
-      }
-    } catch {
-      showToast(t('popup.quickDownload.failed'), 'error');
-      dl.disabled = false;
-    }
-  });
-  row.appendChild(dl);
-
-  return row;
-}
-
-function renderResList(): void {
-  const items = filteredResources();
-  resListEl.textContent = '';
-  for (const r of items) resListEl.appendChild(buildResRow(r));
-
-  const empty = resources.length === 0;
-  resEmptyEl.classList.toggle('hidden', !empty);
-  resTypeTabsEl.classList.toggle('hidden', empty);
-  resFooterEl.classList.toggle('hidden', empty);
-  updateResBatchBar();
-}
-
-function updateResBatchBar(): void {
-  const visible = filteredResources();
-  const selectedVisible = visible.filter((r) => resSelectedIds.has(r.id)).length;
-  resBatchCount.textContent = String(resSelectedIds.size);
-  resBatchBtn.disabled = resSelectedIds.size === 0;
-  resSelectAll.checked = visible.length > 0 && selectedVisible === visible.length;
-}
-
-resSelectAll.addEventListener('change', () => {
-  const visible = filteredResources();
-  if (resSelectAll.checked) {
-    for (const r of visible) resSelectedIds.add(r.id);
-  } else {
-    for (const r of visible) resSelectedIds.delete(r.id);
-  }
-  renderResList();
-});
-
-resBatchBtn.addEventListener('click', async () => {
-  const items = resources.filter((r) => resSelectedIds.has(r.id));
-  if (items.length === 0) return;
-  resBatchBtn.disabled = true;
-  try {
-    await browser.runtime.sendMessage({
-      action: 'batchDownload',
-      items: items.map(resDownloadPayload),
-    });
-    showToast(t('popup.quickDownload.sent'));
-    resSelectedIds.clear();
-    renderResList();
-  } catch {
-    showToast(t('popup.quickDownload.failed'), 'error');
-    resBatchBtn.disabled = false;
-  }
 });
 
 // ===== 排除当前站点 =====
@@ -1135,7 +759,7 @@ excludeCurrentToggle.addEventListener('change', async () => {
 
 // ===== 初始化 =====
 // 性能关键路径：popup 弹出到首次完整渲染。
-// 1. 所有 storage 读取合并为一轮并行（i18n / 主题+悬浮球+统计 / 设置）；
+// 1. 所有 storage 读取合并为一轮并行（i18n / 主题+统计 / 设置）；
 // 2. 探活（refreshConnectionStatus）与任务轮询（startPolling）都不阻塞 UI 回显——
 //    off 模式下 refreshConnectionStatus 要 connectNative 冷启动 NMH 进程、
 //    always 模式下 remotePing 超时可达 4s；任务区在收到首次轮询结果前保持
@@ -1143,7 +767,7 @@ excludeCurrentToggle.addEventListener('change', async () => {
 async function init() {
   const [, localState, settings] = await Promise.all([
     initI18n(),
-    browser.storage.local.get(['theme', 'fluxdown_dot_visible', 'stats']),
+    browser.storage.local.get(['theme', 'stats']),
     loadSettings(),
   ]);
 
@@ -1160,8 +784,6 @@ async function init() {
   updateEnableHint(settings.enabled);
   protocolToggle.checked = settings.enableFluxdownProtocol === true;
   updateProtocolHint(settings.enableFluxdownProtocol === true);
-  dotVisibleToggle.checked = localState?.['fluxdown_dot_visible'] !== false;
-  sniffToggle.checked = settings.resourceSniffing !== false;
   magnetToggle.checked = settings.interceptMagnet !== false;
 
   // 排除当前站点：列表随设置同步落地，当前站点域名异步补齐（tabs.query 不阻塞渲染）
@@ -1186,8 +808,6 @@ async function init() {
   // 任务面板轮询：立即一次 + 1s 间隔，隐藏/切走 tab 即停（见 visibilitychange 与 switchPane）。
   startPolling();
 
-  // 资源徽标：取一次当前活跃 tab 的嗅探快照（fire-and-forget，不阻塞弹出渲染）。
-  void refreshResources().catch(() => {});
 }
 
 /** 头部总开关没有文字位，状态收进 tooltip：「下载拦截 · 已开启」 */
@@ -1267,16 +887,6 @@ langBtn.addEventListener('click', toggleLang);
 
 // 主题切换
 themeBtn.addEventListener('click', toggleTheme);
-
-// 悬浮球显示/隐藏
-dotVisibleToggle.addEventListener('change', async () => {
-  await browser.storage.local.set({ fluxdown_dot_visible: dotVisibleToggle.checked });
-});
-
-// 资源嗅探开关（更改后新加载的页面生效；background 侧即时生效）
-sniffToggle.addEventListener('change', async () => {
-  await saveSettings({ resourceSniffing: sniffToggle.checked });
-});
 
 // 磁力链接接管开关（已打开页面即时生效，交还系统默认处理程序）
 magnetToggle.addEventListener('change', async () => {

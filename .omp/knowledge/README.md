@@ -11,7 +11,7 @@
 
 - **核心价值主张**: Rust 驱动的高速多协议下载，永久免费，零广告，零追踪（仅两条匿名部署遥测，可关），本地优先，无需账号即可全功能使用。
 - **平台矩阵（已发布）**: Windows / macOS / Linux 桌面 App、Android App、headless Web 服务器（Docker/群晖/QNAP/OpenWrt/Unraid/CasaOS）、CLI（`fluxdown`）、浏览器扩展、用户脚本。iOS 代码存在但无发布 job。
-- **可选云能力（FluxCloud）**: 登录账号后跨设备**配置同步**（客户端已落地，见 `clients.md`「Flutter 前端架构」）；下载本身永远本地，账号非必需。
+- **纯本地运行**：不接入 FluxDown 官方账号、配置同步、遥测、更新或 CDN 配置服务。
 
 ---
 
@@ -22,7 +22,7 @@
 | `README.md`（本文件） | 架构全图、顶层目录树 |
 | `engine.md` | 状态与数据模型、DB 表与字段语义、6 协议、引擎子系统、插件系统、受管组件 |
 | `hosts-and-api.md` | HTTP API 路由组与鉴权、hub / cli / nmh / updater、headless server env 与路由 |
-| `clients.md` | Flutter 前端（主题 / 云同步 / widgets / 移动端 / 设置项分类）、扩展、用户脚本、Web SPA、官网 |
+| `clients.md` | Flutter 前端（主题 / widgets / 移动端 / 设置项分类）、扩展、用户脚本、Web SPA |
 | `ops.md` | 日志系统、发布与 CI、设计文档实现状态 |
 | `extension-points.md` | 「要加 X 改哪里」全表 |
 
@@ -81,7 +81,7 @@ FluxDown/
 │   ├── widgets/        桌面 UI 组件族（见 `clients.md`「Flutter 前端架构」）
 │   ├── mobile/         移动端 UI（Android 已发布；简化：无窗口/托盘/NMH）
 │   ├── popup/          第二 Flutter 引擎（快速下载独立小窗，--quick-popup）
-│   ├── services/       服务层（含 cloud/ 云同步子系统、win32_toast/）
+│   ├── services/       本地服务层（含 link/、win32_toast/）
 │   ├── theme/          双层 token 系统（颜色 + 度量，schema v2）
 │   └── i18n/           翻译（Weblate 管理，assets/i18n/*.json 为源）
 ├── native/             Rust workspace（resolver=3，members=native/*）
@@ -91,7 +91,6 @@ FluxDown/
 │   ├── hub/            rinf FFI 适配层（唯一碰 rinf）——见 `hosts-and-api.md`「宿主与客户端 crate」
 │   ├── cli/            `fluxdown_cli`：二进制 `fluxdown`——见 `hosts-and-api.md`「宿主与客户端 crate」
 │   ├── nmh/            Native Messaging Host 中继二进制
-│   └── fluxdown_updater/  独立自更新 helper 二进制（hub 拉起）
 ├── web/                Web SPA（React 19 + TanStack + Tailwind v4，bun）——见 `clients.md`「Web SPA」
 ├── website/            官网（Astro SSR + 内容集文档系统）——见 `clients.md`「官网」
 ├── fluxDown/           WXT 浏览器扩展（Chrome/Firefox MV3）——见 `clients.md`「浏览器扩展与用户脚本」

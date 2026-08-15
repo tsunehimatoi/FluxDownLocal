@@ -260,8 +260,6 @@ pub enum WsServerMsg {
     },
     /// `ping` 应答（RTT 测量）。
     Pong {},
-    /// 插件因熔断（连续超时/过载）被自动禁用（`reason` 固定 `"CircuitBreaker"`）。
-    PluginAutoDisabled { identity: String, reason: String },
     /// BT 重复添加：新任务的 info-hash 已被 `existingTaskId` 持有，占位任务
     /// （`taskId`）已被引擎删除。客户端据此提示用户；`existingName` 可能为空。
     DuplicateTorrent {
@@ -269,18 +267,6 @@ pub enum WsServerMsg {
         existing_task_id: String,
         existing_name: String,
     },
-    /// 插件 onDone 钩子执行中（`running=true` 开始/`false` 结束）；同一任务可
-    /// 有多个插件并发钩子，客户端按 `(taskId, pluginId)` 集合跟踪，用于在
-    /// 已完成任务旁显示“插件处理中…”指示器。事件可能因 fire-and-forget 丢失
-    /// （尤其是 `running=false`），客户端需自带看门狗超时兜底清除。
-    PluginHookActivity {
-        task_id: String,
-        plugin_id: String,
-        running: bool,
-    },
-    /// 插件表发生增删改（安装/卸载/启停/设置变更）；空载荷 ping，客户端收到后
-    /// 全量 invalidate 插件列表查询。
-    PluginsChanged {},
     /// 任务组列表变化（组建/删除/改名/回收后）；组进度仍由前端按
     /// `groupId` 对 `taskProgress` SUM 聚合，本消息不含进度字段。
     GroupsChanged { groups: Vec<GroupDto> },
@@ -830,20 +816,6 @@ mod tests {
         assert!(json.contains("\"uploadedBytes\":42"));
         assert!(json.contains("\"uploadSpeed\":7"));
         assert!(json.contains("\"seedingStatus\":1"));
-    }
-
-    #[test]
-    fn ws_server_msg_plugin_hook_activity_uses_camel_case() {
-        let msg = WsServerMsg::PluginHookActivity {
-            task_id: "t1".into(),
-            plugin_id: "p1".into(),
-            running: true,
-        };
-        let json = serde_json::to_string(&msg).unwrap();
-        assert!(json.contains("\"type\":\"pluginHookActivity\""));
-        assert!(json.contains("\"taskId\":\"t1\""));
-        assert!(json.contains("\"pluginId\":\"p1\""));
-        assert!(json.contains("\"running\":true"));
     }
 
     #[test]

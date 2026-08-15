@@ -273,9 +273,7 @@ impl EventSink for RinfEventSink {
                     kind: TaskEventKind::BtComplete,
                 });
             }
-            EngineEvent::PluginAutoDisabled { identity, reason } => {
-                signals::PluginAutoDisabledNotice { identity, reason }.send_signal_to_dart();
-            }
+            EngineEvent::PluginAutoDisabled { .. } => {}
             EngineEvent::DuplicateTorrentDetected {
                 task_id,
                 existing_task_id,
@@ -288,18 +286,7 @@ impl EventSink for RinfEventSink {
                 }
                 .send_signal_to_dart();
             }
-            EngineEvent::PluginHookActivity {
-                task_id,
-                plugin_id,
-                running,
-            } => {
-                signals::PluginHookActivityEvent {
-                    task_id,
-                    plugin_id,
-                    running,
-                }
-                .send_signal_to_dart();
-            }
+            EngineEvent::PluginHookActivity { .. } => {}
             EngineEvent::GroupsChanged(groups) => {
                 signals::AllGroups {
                     groups: groups.into_iter().map(Into::into).collect(),

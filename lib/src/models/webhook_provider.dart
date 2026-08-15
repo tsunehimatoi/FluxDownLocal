@@ -18,7 +18,7 @@ const int _kMaxLocalDeliveries = 1000;
 /// [SettingsProvider] 管。本 Provider 只承载「引擎内存里、DB 查不到」的东西：
 /// 环形投递日志、预设模板目录、一次性测试回执。
 ///
-/// 复刻 [PluginProvider] 的 ChangeNotifier + rinf 信号订阅模式：
+/// 使用 ChangeNotifier + rinf 信号订阅模式：
 /// `refresh()` 主动拉取，写操作单向 `sendSignalToRust()`，结果异步回流。
 class WebhookProvider extends ChangeNotifier {
   static const String _tag = 'Webhook';

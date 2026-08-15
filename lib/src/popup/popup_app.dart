@@ -21,8 +21,7 @@ import '../bindings/bindings.dart' show ResolvePreviewResult;
 import '../i18n/locale_provider.dart';
 import '../models/download_queue.dart' show kMainQueueId;
 import '../services/file_picker_service.dart';
-import '../services/resolve_preview_client.dart'
-    show isManifestPreviewableUrl;
+import '../services/resolve_preview_client.dart' show isManifestPreviewableUrl;
 import '../theme/app_colors.dart';
 import '../theme/app_theme.dart';
 import '../theme/flux_theme_tokens.dart';
@@ -459,7 +458,9 @@ class _PopupShellState extends State<_PopupShell> {
         : _cancel;
 
     return CallbackShortcuts(
-      bindings: {const SingleActivator(LogicalKeyboardKey.escape): escapeAction},
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.escape): escapeAction,
+      },
       child: Focus(
         autofocus: true,
         child: Container(
@@ -502,9 +503,7 @@ class _PopupShellState extends State<_PopupShell> {
     return SingleChildScrollView(
       child: NotificationListener<SizeChangedLayoutNotification>(
         onNotification: (_) {
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _requestResize(),
-          );
+          WidgetsBinding.instance.addPostFrameCallback((_) => _requestResize());
           return true;
         },
         child: SizeChangedLayoutNotifier(
@@ -524,10 +523,7 @@ class _PopupShellState extends State<_PopupShell> {
                 children: [
                   Text(
                     s.fromBrowserExtension,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: c.textMuted,
-                    ),
+                    style: TextStyle(fontSize: 13, color: c.textMuted),
                   ),
                   const SizedBox(height: 16),
                   QuickDownloadForm(
@@ -655,9 +651,6 @@ class _PopupFormHost implements QuickDownloadFormHost {
 
   @override
   List<QuickQueueOption> get queues => payload.queues;
-
-  @override
-  List<QuickDeviceOption> get devices => payload.devices;
 
   @override
   int get defaultSegments => payload.defaultSegments;

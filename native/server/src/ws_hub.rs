@@ -344,10 +344,7 @@ impl EventSink for EngineEventSink {
                     .broadcast_task_event(task_id, TaskEventKind::BtComplete);
                 return;
             }
-            // 插件因熔断被自动禁用（reason 固定 "CircuitBreaker"）。
-            EngineEvent::PluginAutoDisabled { identity, reason } => {
-                WsServerMsg::PluginAutoDisabled { identity, reason }
-            }
+            EngineEvent::PluginAutoDisabled { .. } => return,
             // BT 重复添加：占位任务已被引擎删除，提示并指向已有任务。
             EngineEvent::DuplicateTorrentDetected {
                 task_id,
@@ -358,17 +355,7 @@ impl EventSink for EngineEventSink {
                 existing_task_id,
                 existing_name,
             },
-            // 插件 onDone 钩子活动状态（running=true/false），驱动“插件处理
-            // 中…”指示器；可能并发/丢失，客户端自带看门狗兜底。
-            EngineEvent::PluginHookActivity {
-                task_id,
-                plugin_id,
-                running,
-            } => WsServerMsg::PluginHookActivity {
-                task_id,
-                plugin_id,
-                running,
-            },
+            EngineEvent::PluginHookActivity { .. } => return,
             // 组名/删除/回收需要实时传导给 web 客户端（组进度仍由前端按
             // groupId 对 taskProgress SUM 聚合，本消息不含进度字段）。
             EngineEvent::GroupsChanged(groups) => WsServerMsg::GroupsChanged {

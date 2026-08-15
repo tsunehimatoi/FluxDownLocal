@@ -1,4 +1,4 @@
-// 侧边栏（220px）：品牌 + 全局速度、分类 / 设备 / 队列 / RSS 四个可折叠区块、连接徽标、反馈入口。
+// 侧边栏（220px）：品牌 + 全局速度、分类 / 设备 / 队列 / RSS 四个可折叠区块、连接徽标。
 //
 // 四个区块的显隐与折叠状态存在引擎 config 表里（见 lib/config.ts 的键表），与桌面客户端
 // 是同一份数据：在任一端右键区块标题「隐藏此区块」，另一端下次读配置也随之隐藏。四个全隐
@@ -9,14 +9,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import * as ContextMenu from '@radix-ui/react-context-menu'
 import * as Dialog from '@radix-ui/react-dialog'
-import { ArrowUpCircle, ChevronDown, EyeOff, Globe, List, Loader2, LogOut, Monitor, MessageCircle, Pause, Play, Plus, RefreshCw, Radio, Smartphone, Trash2, X } from 'lucide-react'
+import { ChevronDown, EyeOff, List, Loader2, LogOut, Monitor, Pause, Play, Plus, RefreshCw, Radio, Smartphone, Trash2, X } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { AddLocalDeviceDialog } from '../dialogs/add-local-device'
 import { api } from '../../lib/api'
 import { categoryIcon, categoryIdOf, categoryLabel, parseCategories, visibleCategories, ALL_CATEGORY } from '../../lib/categories'
-import { cloudApi } from '../../lib/cloud/client'
-import { cloudDeviceId, useCloudSession } from '../../lib/cloud/session'
-import { useRemoteTasks } from '../../lib/cloud/useRemoteTasks'
 import { linkApi } from '../../lib/link'
 import { clearCredentials, getBase } from '../../lib/auth'
 import { cn } from '../../lib/cn'
@@ -33,7 +30,6 @@ import {
 import { fmtSpeed, fmtTime, queueDisplayName } from '../../lib/format'
 import { useI18n } from '../../lib/i18n'
 import { connStore, disconnectWs, useGlobalSpeed, useStore } from '../../lib/ws'
-import { useUpdateCheck } from '../../lib/update'
 import { confirmDialog } from '../../lib/confirm'
 import { sourceDisplayName } from '../../lib/rss-filter'
 import type { ConfigMap, RssSourceDto } from '../../lib/types'
@@ -54,26 +50,15 @@ export function Sidebar() {
   const { t } = useI18n()
   const tasks = useViewTasks()
   const { data: queues = [] } = useQuery({ queryKey: ['queues'], queryFn: api.listQueues })
-  const { categoryFilter, setCategoryFilter, queueFilter, setQueueFilter, deviceFilter, setDeviceFilter, rssFilter, setRssFilter, sidebarOpen, setSidebarOpen } = useTasksUi()
+  const { categoryFilter, setCategoryFilter, queueFilter, setQueueFilter, rssFilter, setRssFilter, sidebarOpen, setSidebarOpen } = useTasksUi()
   const speed = useGlobalSpeed()
   const conn = useStore(connStore)
-  const update = useUpdateCheck()
   const qc = useQueryClient()
   const navigate = useNavigate()
   const [logoutOpen, setLogoutOpen] = useState(false)
   const [rssCreateOpen, setRssCreateOpen] = useState(false)
-  const session = useCloudSession()
-  const myDeviceId = cloudDeviceId()
   const { data: config } = useConfigQuery()
   const configMut = useConfigMutation()
-  const { data: cloudDevices = [] } = useQuery({
-    queryKey: ['cloud', 'devices'],
-    queryFn: () => cloudApi.devices().then((r) => r.devices),
-    enabled: session.status === 'authenticated',
-    staleTime: 10_000,
-  })
-  const remoteDevices = cloudDevices.filter((d) => d.deviceId !== myDeviceId)
-  const { remoteTasks } = useRemoteTasks()
   // 本地设备(link)小节：仅展示已配对设备（在线圆点），不参与 deviceFilter 任务过滤——
   // 本地设备的任务运行在对端，本端看不到其进度，点击没有意义。
   const { data: linkDevices = [] } = useQuery({
@@ -86,14 +71,11 @@ export function Sidebar() {
 
   // 区块显隐。设备区是三态：未设置 = 有别的设备才显示（渐进披露），显式 true/false 则强制。
   //
-  // 它**不要求登录云账户**：本机始终是一台设备，局域网直连配对也不经账号；
-  // 云端登录只决定「远程设备」这一小节有没有内容。把整区挂在登录状态上，会让
-  // 打开开关的用户对着空白发懵。
+  // 本机始终是一台设备，局域网直连配对不依赖账号。
   const showCategory = readBool(config, SECTION_KEY.category)
   const showQueues = readBool(config, SECTION_KEY.queues)
   const showRss = readBool(config, SECTION_KEY.rss)
-  const hasAnyDevice = remoteDevices.length > 0 || showLinkSection
-  const showDeviceSection = readTriBool(config, SECTION_KEY.device) ?? hasAnyDevice
+  const showDeviceSection = readTriBool(config, SECTION_KEY.device) ?? showLinkSection
 
   // 写配置先本地落一帧再发请求：折叠箭头等交互的反馈必须是即时的，等一轮往返
   // 才动会像点了没反应。服务端回执后 invalidate 会用权威值覆盖这一帧。
@@ -321,41 +303,6 @@ export function Sidebar() {
             />
             {expanded('device') && (
               <nav className="side-nav">
-                <button
-                  type="button"
-                  className={cn('side-item', !rssFilter && deviceFilter === null && 'active')}
-                  onClick={() => { setDeviceFilter(null); setRssFilter(null); setSidebarOpen(false) }}
-                >
-                  <Globe size={15} />
-                  <span>{t('sidebar.allDevices')}</span>
-                </button>
-                <button
-                  type="button"
-                  className={cn('side-item', !rssFilter && deviceFilter === myDeviceId && 'active')}
-                  onClick={() => { setDeviceFilter(myDeviceId); setRssFilter(null); setSidebarOpen(false) }}
-                >
-                  <Monitor size={15} />
-                  <i className="queue-dot on" title={t('link.online')} />
-                  <span>{t('cloud.deviceCurrent')}</span>
-                  <em>{tasks.length || ''}</em>
-                </button>
-                {remoteDevices.map((d) => {
-                  const Icon = d.platform === 'android' || d.platform === 'ios' ? Smartphone : Monitor
-                  const count = remoteTasks.filter((rt) => rt.toDevice === d.deviceId).length
-                  return (
-                    <button
-                      key={d.id}
-                      type="button"
-                      className={cn('side-item', !rssFilter && deviceFilter === d.deviceId && 'active')}
-                      onClick={() => { setDeviceFilter(d.deviceId); setRssFilter(null); setSidebarOpen(false) }}
-                    >
-                      <Icon size={15} />
-                      <i className={cn('queue-dot', d.isOnline && 'on')} title={d.isOnline ? t('link.online') : t('link.offline')} />
-                      <span>{d.name || '-'}</span>
-                      <em>{count || ''}</em>
-                    </button>
-                  )
-                })}
                 {showLinkSection && (
                   <>
                     <p className="side-sublabel">{t('sidebar.directDevices')}</p>
@@ -398,20 +345,6 @@ export function Sidebar() {
             <LogOut size={13} />
           </button>
         </div>
-        <a className="side-feedback" href="https://github.com/zerx-lab/FluxDown/issues" target="_blank" rel="noreferrer">
-          <MessageCircle size={14} />
-          {t('sidebar.feedback')}
-        </a>
-        {update.hasUpdate && update.releaseUrl ? (
-          <a className="side-feedback" style={{ color: 'var(--accent)' }} href={update.releaseUrl} target="_blank" rel="noreferrer">
-            <ArrowUpCircle size={14} />
-            {t('sidebar.newVersion', { version: `v${update.latest}` })}
-          </a>
-        ) : update.current ? (
-          <span className="side-feedback" style={{ cursor: 'default' }}>
-            {t('sidebar.version', { version: `v${update.current}` })}
-          </span>
-        ) : null}
       </div>
 
       <Dialog.Root open={logoutOpen} onOpenChange={setLogoutOpen}>

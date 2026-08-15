@@ -54,11 +54,7 @@ class QuickPopupPayload {
   /// 命名队列列表
   final List<QuickQueueOption> queues;
 
-  /// 设备名册（云账户已登录且有远程设备时非空；渐进披露判定源）。
-  final List<QuickDeviceOption> devices;
-
-  /// 本地配对设备名册（局域网直连，免账号；与 [devices] 独立维护，两者
-  /// 分别对应设备选择器里的云账户分组与本地直连分组）。
+  /// 本地配对设备名册（局域网直连，免账号）。
   final List<QuickDeviceOption> localDevices;
 
   /// 是否检测到系统代理（主引擎 SystemProxyStatusService 缓存值；popup
@@ -90,7 +86,6 @@ class QuickPopupPayload {
     required this.lastDialogThreads,
     required this.defaultQueueId,
     required this.queues,
-    this.devices = const [],
     this.localDevices = const [],
     this.systemProxyDetected = false,
     this.systemProxySummary = '',
@@ -122,7 +117,6 @@ class QuickPopupPayload {
             'defaultSegments': q.defaultSegments,
           },
       ],
-      'devices': _deviceOptionsToJson(devices),
       'localDevices': _deviceOptionsToJson(localDevices),
       'systemProxyDetected': systemProxyDetected,
       'systemProxySummary': systemProxySummary,
@@ -156,7 +150,6 @@ class QuickPopupPayload {
             defaultSegments: (q['defaultSegments'] as num?)?.toInt() ?? 0,
           ),
       ],
-      devices: _deviceOptionsFromJson(env['devices']),
       localDevices: _deviceOptionsFromJson(env['localDevices']),
       systemProxyDetected: env['systemProxyDetected'] as bool? ?? false,
       systemProxySummary: env['systemProxySummary'] as String? ?? '',
@@ -166,18 +159,17 @@ class QuickPopupPayload {
   }
 }
 
-/// [QuickDeviceOption] 列表 ↔ JSON 数组的双向投影。[QuickPopupPayload.devices]
-/// （云账户）与 [QuickPopupPayload.localDevices]（本地配对）结构相同，
-/// 共用本编解码逻辑。
-List<Map<String, dynamic>> _deviceOptionsToJson(List<QuickDeviceOption> list) => [
-  for (final d in list)
-    {
-      'deviceId': d.deviceId,
-      'name': d.name,
-      'platform': d.platform,
-      'isOnline': d.isOnline,
-    },
-];
+/// [QuickDeviceOption] 列表 ↔ JSON 数组的双向投影。
+List<Map<String, dynamic>> _deviceOptionsToJson(List<QuickDeviceOption> list) =>
+    [
+      for (final d in list)
+        {
+          'deviceId': d.deviceId,
+          'name': d.name,
+          'platform': d.platform,
+          'isOnline': d.isOnline,
+        },
+    ];
 
 List<QuickDeviceOption> _deviceOptionsFromJson(dynamic raw) => [
   for (final d in (raw as List? ?? const []))
@@ -196,10 +188,8 @@ class QuickPopupResult {
 
   const QuickPopupResult({required this.requestId, required this.form});
 
-  String toJsonString() => jsonEncode({
-    'requestId': requestId,
-    ...quickFormResultToJson(form),
-  });
+  String toJsonString() =>
+      jsonEncode({'requestId': requestId, ...quickFormResultToJson(form)});
 
   factory QuickPopupResult.fromJsonString(String json) {
     final map = jsonDecode(json) as Map<String, dynamic>;
@@ -232,31 +222,31 @@ Map<String, dynamic> quickFormResultToJson(QuickDownloadFormResult form) => {
   'saveSiteAuth': form.saveSiteAuth,
 };
 
-QuickDownloadFormResult quickFormResultFromJson(Map<String, dynamic> map) =>
-    QuickDownloadFormResult(
-      urlText: map['urlText'] as String? ?? '',
-      saveDir: map['saveDir'] as String? ?? '',
-      rename: map['rename'] as String? ?? '',
-      segments: (map['segments'] as num?)?.toInt() ?? 0,
-      proxyUrl: map['proxyUrl'] as String? ?? '',
-      userAgent: map['userAgent'] as String? ?? '',
-      queueId: map['queueId'] as String? ?? '',
-      cookies: map['cookies'] as String? ?? '',
-      checksum: map['checksum'] as String? ?? '',
-      ignoreTlsErrors: map['ignoreTlsErrors'] as bool? ?? false,
-      threadsUserModified: map['threadsUserModified'] as bool? ?? false,
-      startLater: map['startLater'] as bool? ?? false,
-      targetDeviceId: map['targetDeviceId'] as String? ?? '',
-      httpUser: map['httpUser'] as String? ?? '',
-      httpPassword: map['httpPassword'] as String? ?? '',
-      saveSiteAuth: map['saveSiteAuth'] as bool? ?? false,
-      extraHeaders: {
-        for (final e
-            in (map['extraHeaders'] as Map<String, dynamic>? ?? const {})
-                .entries)
-          e.key: (e.value as String?) ?? '',
-      },
-    );
+QuickDownloadFormResult quickFormResultFromJson(
+  Map<String, dynamic> map,
+) => QuickDownloadFormResult(
+  urlText: map['urlText'] as String? ?? '',
+  saveDir: map['saveDir'] as String? ?? '',
+  rename: map['rename'] as String? ?? '',
+  segments: (map['segments'] as num?)?.toInt() ?? 0,
+  proxyUrl: map['proxyUrl'] as String? ?? '',
+  userAgent: map['userAgent'] as String? ?? '',
+  queueId: map['queueId'] as String? ?? '',
+  cookies: map['cookies'] as String? ?? '',
+  checksum: map['checksum'] as String? ?? '',
+  ignoreTlsErrors: map['ignoreTlsErrors'] as bool? ?? false,
+  threadsUserModified: map['threadsUserModified'] as bool? ?? false,
+  startLater: map['startLater'] as bool? ?? false,
+  targetDeviceId: map['targetDeviceId'] as String? ?? '',
+  httpUser: map['httpUser'] as String? ?? '',
+  httpPassword: map['httpPassword'] as String? ?? '',
+  saveSiteAuth: map['saveSiteAuth'] as bool? ?? false,
+  extraHeaders: {
+    for (final e
+        in (map['extraHeaders'] as Map<String, dynamic>? ?? const {}).entries)
+      e.key: (e.value as String?) ?? '',
+  },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // relay 信封（原生通用透传：popup_child.relay ↔ popup_host.onRelay 及反向）
@@ -324,7 +314,9 @@ PopupRelayMessage encodePreviewRequest({
 );
 
 QuickDownloadFormResult decodePreviewRequestForm(PopupRelayMessage msg) =>
-    quickFormResultFromJson(msg.data['form'] as Map<String, dynamic>? ?? const {});
+    quickFormResultFromJson(
+      msg.data['form'] as Map<String, dynamic>? ?? const {},
+    );
 
 /// previewResult：`manifest == null` = 无清单（弹窗应走普通提交回退）。
 PopupRelayMessage encodePreviewResult({

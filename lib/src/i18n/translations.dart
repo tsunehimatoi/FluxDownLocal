@@ -183,6 +183,7 @@ class S {
   String get settingsSearchNoResults => _r('settingsSearchNoResults');
   String get pauseAll => _r('pauseAll');
   String get resumeAll => _r('resumeAll');
+  String get clearCompletedTasks => _r('clearCompletedTasks');
   String get toggleToLight => _r('toggleToLight');
   String get toggleToDark => _r('toggleToDark');
 
@@ -392,10 +393,8 @@ class S {
   String get detailCdnKickBuild => _r('detailCdnKickBuild');
   String detailLogCdnBreaker(String host) =>
       _r('detailLogCdnBreaker', {'host': host});
-  String detailLogCdnFallbackFew(int candidates, int alive) => _r(
-    'detailLogCdnFallbackFew',
-    {'candidates': candidates, 'alive': alive},
-  );
+  String detailLogCdnFallbackFew(int candidates, int alive) =>
+      _r('detailLogCdnFallbackFew', {'candidates': candidates, 'alive': alive});
   String get detailLogCdnFallbackError => _r('detailLogCdnFallbackError');
   String detailLogCdnLeases(String host) =>
       _r('detailLogCdnLeases', {'host': host});
@@ -403,10 +402,8 @@ class S {
       _r('detailLogCdnLeasesNode', {'ip': ip, 'count': count});
   String detailLogCdnSummary(String host) =>
       _r('detailLogCdnSummary', {'host': host});
-  String detailLogCdnSummaryNode(String ip, String bytes, String speed) => _r(
-    'detailLogCdnSummaryNode',
-    {'ip': ip, 'bytes': bytes, 'speed': speed},
-  );
+  String detailLogCdnSummaryNode(String ip, String bytes, String speed) =>
+      _r('detailLogCdnSummaryNode', {'ip': ip, 'bytes': bytes, 'speed': speed});
   String get detailCdnNodeSys => _r('detailCdnNodeSys');
   String get detailNotSet => _r('detailNotSet');
   String get detailFollowGlobal => _r('detailFollowGlobal');
@@ -523,147 +520,14 @@ class S {
   String get settingsCatApiServiceDesc => _r('settingsCatApiServiceDesc');
   String get settingsCatAbout => _r('settingsCatAbout');
   String get settingsCatAboutDesc => _r('settingsCatAboutDesc');
-  String get settingsCatAccount => _r('settingsCatAccount');
-  String get settingsCatAccountDesc => _r('settingsCatAccountDesc');
 
-  // 账户 —— FluxCloud 登录/注册/设备管理
-  String get accountHeroSubtitle => _r('accountHeroSubtitle');
-  String get accountLogin => _r('accountLogin');
-  String get accountLogout => _r('accountLogout');
-  String get accountRegister => _r('accountRegister');
-  String get accountOriginIdCopied => _r('accountOriginIdCopied');
-  String get accountSecurityGroup => _r('accountSecurityGroup');
-  String get accountSecurityGroupDesc => _r('accountSecurityGroupDesc');
-  String get accountGroupCloudFeatures => _r('accountGroupCloudFeatures');
-  String get accountCloudFeaturesDesc => _r('accountCloudFeaturesDesc');
-  String get accountComingSoon => _r('accountComingSoon');
-  String get accountFeatureConfigSync => _r('accountFeatureConfigSync');
-  String get accountFeatureConfigSyncDesc => _r('accountFeatureConfigSyncDesc');
-  String get accountFeatureMultiDevice => _r('accountFeatureMultiDevice');
-  String get accountFeatureMultiDeviceDesc =>
-      _r('accountFeatureMultiDeviceDesc');
-  String get accountLoginDialogTitle => _r('accountLoginDialogTitle');
-  String get accountLoginTabCode => _r('accountLoginTabCode');
-  String get accountLoginTabPassword => _r('accountLoginTabPassword');
-  String get accountEmailPlaceholder => _r('accountEmailPlaceholder');
-  String get accountEmailChangeTitle => _r('accountEmailChangeTitle');
-  String accountEmailChangeOldSubtitle(String email) =>
-      _r('accountEmailChangeOldSubtitle', {'email': email});
-  String get accountEmailChangeOldCodePlaceholder =>
-      _r('accountEmailChangeOldCodePlaceholder');
-  String get accountEmailChangeOldCodeHint =>
-      _r('accountEmailChangeOldCodeHint');
-  String get accountEmailChangeSendNewCode =>
-      _r('accountEmailChangeSendNewCode');
-  String get accountEmailChangeNewPlaceholder =>
-      _r('accountEmailChangeNewPlaceholder');
-  String accountEmailChangeCodeSubtitle(String email) =>
-      _r('accountEmailChangeCodeSubtitle', {'email': email});
-  String get accountEmailChangeInvalid => _r('accountEmailChangeInvalid');
-  String get accountEmailChangeSame => _r('accountEmailChangeSame');
-  String get accountEmailChangeSuccess => _r('accountEmailChangeSuccess');
-  String get accountLoginAccountPlaceholder =>
-      _r('accountLoginAccountPlaceholder');
-  String get accountCodePlaceholder => _r('accountCodePlaceholder');
-  String get accountSendCode => _r('accountSendCode');
-  String get accountPasswordPlaceholder => _r('accountPasswordPlaceholder');
-  String get accountLoginTerms => _r('accountLoginTerms');
-  String get accountNoAccountYet => _r('accountNoAccountYet');
-  String get accountAlreadyHaveAccount => _r('accountAlreadyHaveAccount');
-  String get accountRegisterDialogTitle => _r('accountRegisterDialogTitle');
-  String get accountNicknamePlaceholder => _r('accountNicknamePlaceholder');
-  String get accountNicknameReroll => _r('accountNicknameReroll');
-  String get accountPasswordHint => _r('accountPasswordHint');
-  String get accountDeviceVerifyTitle => _r('accountDeviceVerifyTitle');
-  String accountDeviceVerifySubtitle(String email) =>
-      _r('accountDeviceVerifySubtitle', {'email': email});
-  String get accountDeviceVerifySubtitleGeneric =>
-      _r('accountDeviceVerifySubtitleGeneric');
-  String get accountRegisterVerifyTitle => _r('accountRegisterVerifyTitle');
-  String accountRegisterVerifySubtitle(String email) =>
-      _r('accountRegisterVerifySubtitle', {'email': email});
-  String accountCodeExpireIn(int seconds) =>
-      _r('accountCodeExpireIn', {'seconds': seconds});
-  String get accountResendCode => _r('accountResendCode');
-  String accountResendCodeIn(int seconds) =>
-      _r('accountResendCodeIn', {'seconds': seconds});
-  String get accountVerifySubmit => _r('accountVerifySubmit');
-  String get accountErrorInvalidCredentials =>
-      _r('accountErrorInvalidCredentials');
-  String get accountErrorInvalidCode => _r('accountErrorInvalidCode');
-  String get accountErrorRateLimited => _r('accountErrorRateLimited');
-  String get accountErrorEmailTaken => _r('accountErrorEmailTaken');
-  String get accountErrorAccountDisabled => _r('accountErrorAccountDisabled');
-  String get accountErrorRegistrationClosed =>
-      _r('accountErrorRegistrationClosed');
-  String get accountErrorRegistrationIncomplete =>
-      _r('accountErrorRegistrationIncomplete');
-  String get accountErrorValidation => _r('accountErrorValidation');
-  String get accountErrorNetwork => _r('accountErrorNetwork');
-  String get accountErrorUnknown => _r('accountErrorUnknown');
-  String get accountErrorDeviceLimit => _r('accountErrorDeviceLimit');
-  String get accountDeviceRenameTitle => _r('accountDeviceRenameTitle');
-  String get accountDeviceRenameInvalid => _r('accountDeviceRenameInvalid');
-  String get accountDeviceDeleteConfirmTitle =>
-      _r('accountDeviceDeleteConfirmTitle');
-  String get accountDeviceDeleteConfirmDesc =>
-      _r('accountDeviceDeleteConfirmDesc');
-  String get accountDeviceDeleteCurrentWarning =>
-      _r('accountDeviceDeleteCurrentWarning');
-  String get accountDeviceCurrent => _r('accountDeviceCurrent');
-  String get accountDevicesTitle => _r('accountDevicesTitle');
-  String get accountDevicesDesc => _r('accountDevicesDesc');
-  String get accountDevicesEmpty => _r('accountDevicesEmpty');
-  String get accountDevicesLoadFailed => _r('accountDevicesLoadFailed');
-  String get accountDevicesRetry => _r('accountDevicesRetry');
-  String accountDevicesManageAll(int count) =>
-      _r('accountDevicesManageAll', {'count': count});
-  String get accountDevicesManageAllTitle => _r('accountDevicesManageAllTitle');
-  String get accountDevicesSearchHint => _r('accountDevicesSearchHint');
-  String get accountDevicesSearchNoResults =>
-      _r('accountDevicesSearchNoResults');
-  String get accountDeviceDetailTitle => _r('accountDeviceDetailTitle');
-  String get accountDeviceFieldPlatform => _r('accountDeviceFieldPlatform');
-  String get accountDeviceFieldAppVersion => _r('accountDeviceFieldAppVersion');
-  String get accountDeviceFieldLastIp => _r('accountDeviceFieldLastIp');
-  String get accountDeviceFieldCreatedAt => _r('accountDeviceFieldCreatedAt');
-  String get accountDeviceFieldLastSeenAt => _r('accountDeviceFieldLastSeenAt');
-  String get accountDeviceFieldId => _r('accountDeviceFieldId');
-  String get accountDeviceDeleteAction => _r('accountDeviceDeleteAction');
-  String get accountDevicePlatformWindows => _r('accountDevicePlatformWindows');
-  String get accountDevicePlatformMacos => _r('accountDevicePlatformMacos');
-  String get accountDevicePlatformLinux => _r('accountDevicePlatformLinux');
-  String get accountDevicePlatformAndroid => _r('accountDevicePlatformAndroid');
-  String get accountDevicePlatformIos => _r('accountDevicePlatformIos');
-  String get accountDevicePlatformWeb => _r('accountDevicePlatformWeb');
-  String get accountServerAddress => _r('accountServerAddress');
-  String get accountServerAddressDesc => _r('accountServerAddressDesc');
-  String get accountServerAddressInvalid => _r('accountServerAddressInvalid');
-  String get accountServerAddressReset => _r('accountServerAddressReset');
-  String get accountServerAddressSaved => _r('accountServerAddressSaved');
-
-  // 配置同步 —— FluxCloud 云端设置同步（见 local://sync-contract.md）
-  String get cloudSyncTitle => _r('cloudSyncTitle');
-  String get cloudSyncDesc => _r('cloudSyncDesc');
-  String get cloudSyncStatusDisabled => _r('cloudSyncStatusDisabled');
-  String get cloudSyncStatusConnecting => _r('cloudSyncStatusConnecting');
-  String get cloudSyncStatusSyncing => _r('cloudSyncStatusSyncing');
-  String get cloudSyncStatusSynced => _r('cloudSyncStatusSynced');
-  String cloudSyncStatusError(String reason) =>
-      _r('cloudSyncStatusError', {'reason': reason});
-  String get cloudSyncNow => _r('cloudSyncNow');
-  String get cloudSyncLoginRequired => _r('cloudSyncLoginRequired');
-  String get cloudSyncOtherDevice => _r('cloudSyncOtherDevice');
-  String cloudSyncAppliedToast(int count, String deviceName) =>
-      _r('cloudSyncAppliedToast', {'count': count, 'deviceName': deviceName});
-  String cloudSyncFailedToast(String reason) =>
-      _r('cloudSyncFailedToast', {'reason': reason});
-  String get cloudSyncErrorDeviceLimit => _r('cloudSyncErrorDeviceLimit');
-  String get cloudSyncErrorDeviceUntrusted =>
-      _r('cloudSyncErrorDeviceUntrusted');
-  String get cloudSyncErrorNetwork => _r('cloudSyncErrorNetwork');
-
-  // 分类子 Tab
+  // 局域网直连设备的平台标签
+  String get localDevicePlatformWindows => _r('localDevicePlatformWindows');
+  String get localDevicePlatformMacos => _r('localDevicePlatformMacos');
+  String get localDevicePlatformLinux => _r('localDevicePlatformLinux');
+  String get localDevicePlatformAndroid => _r('localDevicePlatformAndroid');
+  String get localDevicePlatformIos => _r('localDevicePlatformIos');
+  String get localDevicePlatformWeb => _r('localDevicePlatformWeb');
   String get settingsTabGeneral => _r('settingsTabGeneral');
   String get settingsTabTracker => _r('settingsTabTracker');
   String get settingsTabSeeding => _r('settingsTabSeeding');
@@ -755,7 +619,6 @@ class S {
   String dispatchedToDevice(String device) =>
       _r('dispatchedToDevice', {'device': device});
   String get dispatchFailed => _r('dispatchFailed');
-  String get addDeviceHint => _r('addDeviceHint');
   String get addDeviceAccountLabel => _r('addDeviceAccountLabel');
   String get addDeviceLoginRequired => _r('addDeviceLoginRequired');
 
@@ -769,8 +632,7 @@ class S {
   String get localPairingCodeLabel => _r('localPairingCodeLabel');
   String get localPairingCodePlaceholder => _r('localPairingCodePlaceholder');
   String get localPairingCodeHint => _r('localPairingCodeHint');
-  String get localPairingCodeIncomplete =>
-      _r('localPairingCodeIncomplete');
+  String get localPairingCodeIncomplete => _r('localPairingCodeIncomplete');
   String get localPairingConnect => _r('localPairingConnect');
   String get localPairingManualAddress => _r('localPairingManualAddress');
   String get localPairingHostRequired => _r('localPairingHostRequired');
@@ -811,8 +673,7 @@ class S {
   String get localDeviceUnpair => _r('localDeviceUnpair');
   String get localDeviceUnpairConfirmTitle =>
       _r('localDeviceUnpairConfirmTitle');
-  String get localDeviceUnpairConfirmDesc =>
-      _r('localDeviceUnpairConfirmDesc');
+  String get localDeviceUnpairConfirmDesc => _r('localDeviceUnpairConfirmDesc');
   String get localDeviceCodeCopied => _r('localDeviceCodeCopied');
   String localDeviceCodeRemaining(int seconds) =>
       _r('localDeviceCodeRemaining', {'seconds': seconds});
@@ -827,6 +688,9 @@ class S {
   String get showTitlebarPauseAllDesc => _r('showTitlebarPauseAllDesc');
   String get showTitlebarResumeAll => _r('showTitlebarResumeAll');
   String get showTitlebarResumeAllDesc => _r('showTitlebarResumeAllDesc');
+  String get showTitlebarClearCompleted => _r('showTitlebarClearCompleted');
+  String get showTitlebarClearCompletedDesc =>
+      _r('showTitlebarClearCompletedDesc');
   String get showTitlebarSettings => _r('showTitlebarSettings');
   String get showTitlebarSettingsDesc => _r('showTitlebarSettingsDesc');
   String get showTitlebarTheme => _r('showTitlebarTheme');
@@ -1031,6 +895,7 @@ class S {
     };
     return via == null ? label : '$label · $via';
   }
+
   String get proxyType => _r('proxyType');
   String get proxyHost => _r('proxyHost');
   String get proxyHostPlaceholder => _r('proxyHostPlaceholder');
@@ -1482,39 +1347,6 @@ class S {
       _r('searchKeywordsCustomCategories').split(',');
 
   // ─────────────────────────────────────────────
-  // Feedback
-  // ─────────────────────────────────────────────
-  String get feedback => _r('feedback');
-  String get feedbackTitle => _r('feedbackTitle');
-  String get feedbackDesc => _r('feedbackDesc');
-  String get feedbackTypeLabel => _r('feedbackTypeLabel');
-  String get feedbackTypeFeature => _r('feedbackTypeFeature');
-  String get feedbackTypeBug => _r('feedbackTypeBug');
-  String get feedbackTypeOther => _r('feedbackTypeOther');
-  String get feedbackTitleLabel => _r('feedbackTitleLabel');
-  String get feedbackTitlePlaceholder => _r('feedbackTitlePlaceholder');
-  String get feedbackDescLabel => _r('feedbackDescLabel');
-  String get feedbackDescPlaceholder => _r('feedbackDescPlaceholder');
-  String get feedbackContactLabel => _r('feedbackContactLabel');
-  String get feedbackContactPlaceholder => _r('feedbackContactPlaceholder');
-  String get feedbackContactHint => _r('feedbackContactHint');
-  String get feedbackVersionLabel => _r('feedbackVersionLabel');
-  String get feedbackVersionAuto => _r('feedbackVersionAuto');
-  String get feedbackSysInfoLabel => _r('feedbackSysInfoLabel');
-  String get feedbackSysInfoSystem => _r('feedbackSysInfoSystem');
-  String get feedbackSysInfoHint => _r('feedbackSysInfoHint');
-  String get feedbackAttachLogs => _r('feedbackAttachLogs');
-  String get feedbackAttachLogsHint => _r('feedbackAttachLogsHint');
-  String get feedbackOptional => _r('feedbackOptional');
-  String get feedbackSubmit => _r('feedbackSubmit');
-  String get feedbackSubmitting => _r('feedbackSubmitting');
-  String get feedbackSuccess => _r('feedbackSuccess');
-  String get feedbackError => _r('feedbackError');
-  String get feedbackRateLimited => _r('feedbackRateLimited');
-  String feedbackTitleCount(int n) => _r('feedbackTitleCount', {'n': n});
-  String feedbackDescCount(int n) => _r('feedbackDescCount', {'n': n});
-
-  // ─────────────────────────────────────────────
   // HLS 画质选择
   // ─────────────────────────────────────────────
   String get hlsQualityTitle => _r('hlsQualityTitle');
@@ -1546,10 +1378,7 @@ class S {
   String get menuView => _r('menuView');
   String get menuWindow => _r('menuWindow');
   String get menuHelp => _r('menuHelp');
-  String get menuCheckForUpdates => _r('menuCheckForUpdates');
   String get menuSettings => _r('menuSettings');
-  String get menuWebsite => _r('menuWebsite');
-  String get menuFeedback => _r('menuFeedback');
   String get menuAbout => _r('menuAbout');
   String get menuHide => _r('menuHide');
   String get menuHideOthers => _r('menuHideOthers');
@@ -1858,15 +1687,13 @@ class S {
   // ─────────────────────────────────────────────
   String groupItemsCount(int n) => _r('groupItemsCount', {'n': n});
   String groupDoneCount(int n) => _r('groupDoneCount', {'n': n});
-  String groupDownloadingCount(int n) =>
-      _r('groupDownloadingCount', {'n': n});
+  String groupDownloadingCount(int n) => _r('groupDownloadingCount', {'n': n});
   String groupPendingCount(int n) => _r('groupPendingCount', {'n': n});
   String groupPausedCount(int n) => _r('groupPausedCount', {'n': n});
   String groupFailedCount(int n) => _r('groupFailedCount', {'n': n});
   String groupDoneOfTotal(int done, int total) =>
       _r('groupDoneOfTotal', {'done': done, 'total': total});
-  String groupEtaRemaining(String eta) =>
-      _r('groupEtaRemaining', {'eta': eta});
+  String groupEtaRemaining(String eta) => _r('groupEtaRemaining', {'eta': eta});
   String get groupPauseAll => _r('groupPauseAll');
   String get groupResumeAll => _r('groupResumeAll');
   String get groupRetryFailed => _r('groupRetryFailed');

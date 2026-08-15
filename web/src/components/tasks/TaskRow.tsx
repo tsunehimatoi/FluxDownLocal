@@ -1,7 +1,7 @@
 // 单条任务行。对齐 design/web/app.js taskRow()/statusMeta()/actionBtn()/iconClass()。
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Ban, Archive, Check, Download, FileText, Image as ImageIcon, Loader2, Package2, Pause, Play, RotateCcw, Film, Music, File as FileIcon, Zap } from 'lucide-react'
+import { Archive, Check, Download, FileText, Image as ImageIcon, Package2, Pause, Play, RotateCcw, Film, Music, File as FileIcon, Zap } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { api, taskFileUrl } from '../../lib/api'
 import { CopyButton } from '../CopyButton'
@@ -10,7 +10,7 @@ import { fileType, fmtBytes, fmtEta, fmtSpeed, fmtTime, protoLabel, queueDisplay
 import { translateBackendMessage, useI18n } from '../../lib/i18n'
 import { extractSiteLabel } from '../../lib/site'
 import { isSeeding, isSeedingStopped, seedRatio, seedingStatusKey } from '../../lib/seeding'
-import { priorityStore, useStore, useTaskPluginActivity } from '../../lib/ws'
+import { priorityStore, useStore } from '../../lib/ws'
 import type { QueueDto } from '../../lib/types'
 import type { TaskColumnId, ViewDensity } from '../../lib/view-prefs'
 import { TaskContextMenu } from './TaskContextMenu'
@@ -27,9 +27,6 @@ export const TYPE_ICONS: Record<FT, LucideIcon> = {
   other: FileIcon,
 }
 
-/** 插件系统失败任务的错误消息前缀（引擎/hub/server 固定格式，逃生舱按钮据此判断）。 */
-const PLUGIN_ERROR_PREFIX = '[插件]'
-
 export function statusIconClass(status: ViewTask['status']): string {
   if (status === 3) return 'done'
   if (status === 4) return 'err'
@@ -39,7 +36,6 @@ export function statusIconClass(status: ViewTask['status']): string {
 
 function TaskMeta({ t }: { t: ViewTask }) {
   const { t: tr } = useI18n()
-  const pluginActive = useTaskPluginActivity(t.taskId)
   const sep = <span className="sep">·</span>
   if (t.status === 1) {
     return (
@@ -108,15 +104,6 @@ function TaskMeta({ t }: { t: ViewTask }) {
             <span>{tr(seedingStatusKey(t.seedingStatus ?? 0))}</span>
           </>
         )}
-        {pluginActive && (
-          <>
-            {sep}
-            <span className="plugin-activity">
-              <Loader2 size={11} className="animate-spin" />
-              {tr('status.pluginProcessing')}
-            </span>
-          </>
-        )}
       </>
     )
   }
@@ -139,12 +126,10 @@ export function TaskActionButton({
   t,
   onPause,
   onContinue,
-  onIgnorePluginRetry,
 }: {
   t: ViewTask
   onPause: () => void
   onContinue: () => void
-  onIgnorePluginRetry: () => void
 }) {
   const { t: tr } = useI18n()
   if (t.status === 1 || t.status === 5)
@@ -189,19 +174,6 @@ export function TaskActionButton({
         >
           <RotateCcw size={15} />
         </button>
-        {t.errorMessage.startsWith(PLUGIN_ERROR_PREFIX) && (
-          <button
-            type="button"
-            className="task-act"
-            title={tr('task.ignorePluginRetry')}
-            onClick={(e) => {
-              e.stopPropagation()
-              onIgnorePluginRetry()
-            }}
-          >
-            <Ban size={15} />
-          </button>
-        )}
       </>
     )
   // 做种中（活跃/排队）→ 暂停（停止做种）；因限制/手动/会话释放停止 → 继续做种。
@@ -291,7 +263,6 @@ export function TaskRow({
   const boostMut = useMutation({ mutationFn: () => api.boostTask(t.taskId), onSuccess: invalidate })
   const deleteMut = useMutation({ mutationFn: (deleteFiles: boolean) => api.deleteTask(t.taskId, deleteFiles), onSuccess: invalidate })
   const moveMut = useMutation({ mutationFn: (queueId: string) => api.moveTaskToQueue(t.taskId, queueId), onSuccess: invalidate })
-  const ignorePluginRetryMut = useMutation({ mutationFn: () => api.ignorePluginRetry(t.taskId), onSuccess: invalidate })
 
   const Icon = TYPE_ICONS[fileType(t.fileName, t.url)]
   const pct = t.totalBytes > 0 ? Math.round((t.downloadedBytes / t.totalBytes) * 100) : 0
@@ -370,7 +341,6 @@ export function TaskRow({
             t={t}
             onPause={() => pauseMut.mutate()}
             onContinue={() => continueMut.mutate()}
-            onIgnorePluginRetry={() => ignorePluginRetryMut.mutate()}
           />
         </div>
       </div>

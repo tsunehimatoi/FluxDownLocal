@@ -330,7 +330,7 @@ class GroupMemberCounts {
         case TaskStatus.error:
           fail++;
         case TaskStatus.canceled:
-          // 已取消：纯远程任务镜像展示态，非本机失败，不计入任何计数桶
+          // 已取消：中性终态，不计入任何计数桶
           break;
       }
     }
@@ -400,6 +400,7 @@ class ListSection {
   ListSectionMeta get meta => ListSectionMeta.of(entities);
 
   /// 顶层实体数（不含组展开产出的成员/目录行），分组头计数徽标用。
-  int get topLevelCount =>
-      entities.where((e) => e is! GroupMemberEntity && e is! GroupDirEntity).length;
+  int get topLevelCount => entities
+      .where((e) => e is! GroupMemberEntity && e is! GroupDirEntity)
+      .length;
 }

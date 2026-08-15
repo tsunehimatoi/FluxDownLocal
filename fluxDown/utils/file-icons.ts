@@ -1,11 +1,9 @@
 /**
- * 文件/资源类型 → 内联 SVG 图标（lucide 风格线性图标，stroke=currentColor）。
+ * 文件类型 → 内联 SVG 图标（lucide 风格线性图标，stroke=currentColor）。
  *
- * popup 任务卡片与资源列表共用；配色由容器上的 `icon-<kind>` class 控制
+ * popup 任务卡片使用；配色由容器上的 `icon-<kind>` class 控制
  * （见 popup/style.css），SVG 本身不携带颜色。
  */
-
-import type { ResourceType } from './resource-types';
 
 export type FileIconKind =
   | 'video'
@@ -39,25 +37,6 @@ export function fileIconKind(name: string): FileIconKind {
     if (re.test(name)) return kind;
   }
   return 'file';
-}
-
-/** 嗅探资源类型 → 图标 kind（stream 视作视频，magnet 与 torrent 同图标）。 */
-const RESOURCE_KINDS: Record<ResourceType, FileIconKind> = {
-  video: 'video',
-  audio: 'audio',
-  document: 'document',
-  archive: 'archive',
-  image: 'image',
-  executable: 'executable',
-  torrent: 'torrent',
-  stream: 'video',
-  subtitle: 'subtitle',
-  magnet: 'torrent',
-  other: 'file',
-};
-
-export function resourceIconKind(type: ResourceType): FileIconKind {
-  return RESOURCE_KINDS[type] ?? 'file';
 }
 
 /** lucide 图标 path 数据（24x24 viewBox）。 */

@@ -7,20 +7,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:rinf/rinf.dart';
 import '../bindings/bindings.dart' show DuplicateTorrentNotice;
 import '../widgets/flux_sonner.dart';
-import '../../main.dart';
 import '../i18n/locale_provider.dart';
 import '../models/download_controller.dart';
 import '../models/download_task.dart';
 import '../models/list_entity.dart';
-import '../models/plugin_provider.dart';
 import '../models/rss_provider.dart';
 import '../models/settings_provider.dart';
 import '../models/view_prefs.dart';
 import '../services/external_download_service.dart';
-import '../services/cloud/cdn_config_service.dart';
-import '../services/cloud/cdn_report_service.dart';
-import '../services/cloud/config_sync_service.dart';
-import '../services/cloud/remote_task_service.dart';
 import '../services/link/local_pairing_service.dart';
 import '../services/log_service.dart';
 import '../services/kv_store.dart';
@@ -66,9 +60,9 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _controller = DownloadController();
   final _settingsProvider = SettingsProvider();
-  final _pluginProvider = PluginProvider();
   final _rssProvider = RssProvider();
   final _headerBarKey = GlobalKey<HeaderBarState>();
+
   /// 任务列表视图系统偏好 store（全局 + 按状态页签覆盖层，contract-dart.md）。
   final _viewPrefsStore = ViewPrefsStore();
 
@@ -85,6 +79,7 @@ class _HomePageState extends State<HomePage> {
 
   // Detail panel
   bool _isDetailOpen = false;
+
   /// false=底部，true=右侧。默认右侧，切换后持久化。
   bool _detailOnRight =
       KvStore.instance.getBool('detail_panel_on_right') ?? true;
@@ -106,9 +101,6 @@ class _HomePageState extends State<HomePage> {
     logInfo('HomePage', 'initState');
     // 请求 Rust 端加载下载配置
     _settingsProvider.requestConfig();
-    // 请求插件列表 + 订阅熔断器自动禁用通知（弹 toast）
-    _pluginProvider.requestPlugins();
-    _pluginProvider.addListener(_onPluginProviderChanged);
     // BT 重复添加通知：引擎已删除占位任务行，弹提示指向已有任务。
     _dupTorrentSub = DuplicateTorrentNotice.rustSignalStream.listen(
       _onDuplicateTorrent,
@@ -134,22 +126,6 @@ class _HomePageState extends State<HomePage> {
     PowerService.instance.bind(_controller, _settingsProvider);
     // 「任务完成后关机」服务（纯内存状态，重启不保留）
     ShutdownService.instance.bind(_controller);
-    // FluxCloud 配置同步：providers 就绪后接线；远端应用/失败均弹 toast。
-    ConfigSyncService.instance.onRemoteApplied = _onSyncRemoteApplied;
-    ConfigSyncService.instance.addListener(_onConfigSyncChanged);
-    unawaited(
-      ConfigSyncService.instance.attach(
-        settings: _settingsProvider,
-        theme: FluxDownApp.of(context),
-        locale: localeNotifier,
-      ),
-    );
-    // FluxCloud 跨设备任务协同：providers 就绪后接线，登录即开 SSE 长连回流进度。
-    unawaited(RemoteTaskService.instance.attach());
-    // FluxCloud CDN 聚合下载云端配置：登录即拉 + 12h 周期刷新，失败静默。
-    unawaited(CdnConfigService.instance.attach());
-    // FluxCloud CDN 众包遥测上报：常开，登录即上报一次 + 30min 周期，失败静默保留。
-    unawaited(CdnReportService.instance.attach());
     // 本地设备互联（局域网配对，免账号）：与账号体系无关，启动即接线监听。
     // 移动端不支持局域网直连（native/hub/build.rs 在 android/ios 上不编译
     // hub_link，LocalPairingService.supported 恒为 false），显式跳过更
@@ -164,27 +140,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 熔断器自动禁用插件时弹出提示。
-  int _lastAutoDisabledSeq = -1;
-  void _onPluginProviderChanged() {
-    if (!mounted) return;
-    final seq = _pluginProvider.autoDisabledSeq;
-    if (seq == _lastAutoDisabledSeq) return;
-    _lastAutoDisabledSeq = seq;
-    final notice = _pluginProvider.lastAutoDisabledNotice;
-    if (notice == null) return;
-    final matches = _pluginProvider.plugins.where(
-      (p) => p.identity == notice.identity,
-    );
-    final name = matches.isEmpty ? notice.identity : matches.first.name;
-    FluxSonner.of(context).show(
-      ShadToast.destructive(
-        title: Text(currentS.pluginAutoDisabledToast(name)),
-        duration: const Duration(seconds: 4),
-      ),
-    );
-  }
-
   /// BT 重复添加（同 info-hash 已被其他任务下载/做种）→ 提示已有任务。
   StreamSubscription<RustSignalPack<DuplicateTorrentNotice>>? _dupTorrentSub;
   void _onDuplicateTorrent(RustSignalPack<DuplicateTorrentNotice> pack) {
@@ -193,9 +148,9 @@ class _HomePageState extends State<HomePage> {
     final text = name.isEmpty
         ? currentS.duplicateTorrentToastUnnamed
         : currentS.duplicateTorrentToast(name);
-    FluxSonner.of(context).show(
-      ShadToast(title: Text(text), duration: const Duration(seconds: 4)),
-    );
+    FluxSonner.of(
+      context,
+    ).show(ShadToast(title: Text(text), duration: const Duration(seconds: 4)));
   }
 
   /// 主区当前被 RSS 条目流占据（而非任务列表）。
@@ -243,19 +198,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 远端设备同步条目被实际应用后弹 toast（[ConfigSyncService.onRemoteApplied]）。
-  void _onSyncRemoteApplied(int count, String? deviceName) {
-    if (!mounted) return;
-    FluxSonner.of(context).show(
-      ShadToast(
-        title: Text(
-          currentS.cloudSyncAppliedToast(count, deviceName ?? currentS.cloudSyncOtherDevice),
-        ),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
   /// 本机作为被添加方收到配对请求（`incomingPairing` 非空）时弹出核验框
   /// （SAS + 60s 倒计时 + 接受/拒绝，见 incoming_pairing_dialog.dart）；
   /// 弹窗自身监听同一服务、会话失效时自动关闭，这里只负责按需打开且防重入。
@@ -271,25 +213,6 @@ class _HomePageState extends State<HomePage> {
       // 都失败且无提示）。这里补一次主动检查，把期间积压的新会话接上。
       _onLocalPairingChanged();
     });
-  }
-
-  /// 同步失败态弹 toast；同一条错误文案去重，避免退避重试期间反复弹出。
-  String? _lastSyncErrorNotified;
-  void _onConfigSyncChanged() {
-    if (!mounted) return;
-    final sync = ConfigSyncService.instance;
-    if (sync.status != CloudSyncStatus.error || sync.lastError == null) {
-      _lastSyncErrorNotified = null;
-      return;
-    }
-    if (sync.lastError == _lastSyncErrorNotified) return;
-    _lastSyncErrorNotified = sync.lastError;
-    FluxSonner.of(context).show(
-      ShadToast.destructive(
-        title: Text(currentS.cloudSyncFailedToast(sync.lastError!)),
-        duration: const Duration(seconds: 4),
-      ),
-    );
   }
 
   /// 浏览器扩展触发下载时，若当前在设置页则自动切回首页。
@@ -314,12 +237,8 @@ class _HomePageState extends State<HomePage> {
     HardwareKeyboard.instance.removeHandler(_onGlobalKey);
     _settingsProvider.removeListener(_checkSidebarVisibility);
     _settingsProvider.removeListener(_onSettingsLoadedForAssocPrompt);
-    ConfigSyncService.instance.removeListener(_onConfigSyncChanged);
-    ConfigSyncService.instance.onRemoteApplied = null;
     LocalPairingService.instance.removeListener(_onLocalPairingChanged);
-    _pluginProvider.removeListener(_onPluginProviderChanged);
     _dupTorrentSub?.cancel();
-    _pluginProvider.dispose();
     _rssProvider.removeListener(_onRssProviderChanged);
     _rssProvider.dispose();
     _controller.removeListener(_onControllerChanged);
@@ -449,8 +368,6 @@ class _HomePageState extends State<HomePage> {
     // 通知服务内部做 800ms 防抖合批（多文件 → "N 个文件已下载"），
     // 此处无需再做汇总聚合。
     NotificationService.instance.showDownloadComplete(task);
-    // CDN 遥测事件驱动上报：任务完成 → 10s 去抖后上传本轮样本。
-    CdnReportService.instance.notifyTaskCompleted();
   }
 
   /// 「修改线程数」结果提示。成功 → 普通 toast；被拒（任务非暂停态）→
@@ -638,8 +555,7 @@ class _HomePageState extends State<HomePage> {
   void _navigateSelection(int delta) {
     final entities = _navigableEntities();
     if (entities.isEmpty) return;
-    final currentId =
-        _controller.selectedTaskId ?? _controller.selectedGroupId;
+    final currentId = _controller.selectedTaskId ?? _controller.selectedGroupId;
     final currentIndex = currentId == null
         ? -1
         : entities.indexWhere((e) => e.id == currentId);
@@ -829,9 +745,7 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             children: [
               const SizedBox(height: 40),
-              Expanded(
-                child: _buildDetailPanel(isBottom: false),
-              ),
+              Expanded(child: _buildDetailPanel(isBottom: false)),
             ],
           ),
         ),
@@ -938,7 +852,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     final c = AppColors.of(context);
@@ -965,7 +878,6 @@ class _HomePageState extends State<HomePage> {
                 _initialSettingsHighlight = null;
               }),
               settingsProvider: _settingsProvider,
-              pluginProvider: _pluginProvider,
               downloadController: _controller,
               initialCategory: _initialSettingsCategory,
               initialHighlight: _initialSettingsHighlight,
@@ -1435,7 +1347,7 @@ class _BatchDeleteProgressCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           ClipRRect(
-          borderRadius: m.brSm,
+            borderRadius: m.brSm,
             child: LinearProgressIndicator(
               value: animatedProgress,
               backgroundColor: c.surface3,

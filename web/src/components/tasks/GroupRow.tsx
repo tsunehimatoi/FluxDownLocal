@@ -130,7 +130,6 @@ export function GroupRow({ group, members, density = 'comfortable' }: { group: G
         <div className="grow-main">
           <div className="grow-name">
             <b>{name}</b>
-            <span className="grow-badge">{t('group.pluginBadge')}</span>
           </div>
           <GroupCountsLine
             counts={agg.counts}

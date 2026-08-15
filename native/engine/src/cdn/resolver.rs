@@ -4,9 +4,8 @@
 //! 候选集（系统 DNS 结果排前）。所有来源各自受单源超时约束（1.5s），故整体
 //! 耗时有界（< 2s 预算）；任一来源超时/失败仅丢弃该源，绝不影响其余来源。
 //!
-//! 安全边界（方案 §1.2 规则 3）：
-//! - DoH 端点强制 `https://` scheme 白名单 + 数量上限（≤16）；
-//! - 端点必须是 IP-literal（`https://223.5.5.5/resolve`），防"解析器地址
+//! 安全边界（方案 §1.2 规则 3）：内置 DoH 端点是 IP-literal HTTPS 地址，
+//! 防止"解析器地址
 //!   本身需要 DNS 解析"的鸡生蛋问题；证书按 IP SAN 严格校验。
 //!
 //! host 级结果做 5 分钟内存缓存——同一批任务（多文件下载）复用解析结果。
@@ -26,9 +25,6 @@ const PER_SOURCE_TIMEOUT: Duration = Duration::from_millis(1500);
 /// host 级候选缓存 TTL。
 const CACHE_TTL: Duration = Duration::from_secs(5 * 60);
 
-/// 云端可下发的 resolver 端点数量上限（§1.2 规则 3）。
-const MAX_DOH_ENDPOINTS: usize = 16;
-
 /// 内置 DoH-JSON 端点 baseline（Google JSON API 格式，`?name=&type=`，
 /// `Accept: application/dns-json`）。必须是 IP-literal HTTPS 端点：
 /// - AliDNS `223.5.5.5`：`/resolve`，证书含 IP SAN，国内可达性最好，
@@ -36,141 +32,21 @@ const MAX_DOH_ENDPOINTS: usize = 16;
 /// - Cloudflare `1.1.1.1`：`/dns-query`，证书含 IP SAN，海外兜底
 ///   （隐私立场明确不支持 ECS）。
 ///
-/// 未登录/断云/云端未配置时的兜底——动态清单见 [`set_dynamic_endpoints`]。
 fn builtin_endpoints() -> Vec<ResolverEndpoint> {
     vec![
         ResolverEndpoint {
             url: "https://223.5.5.5/resolve".to_string(),
-            ecs: true,
         },
         ResolverEndpoint {
             url: "https://1.1.1.1/dns-query".to_string(),
-            ecs: false,
         },
     ]
 }
 
-/// DoH resolver 端点：`ecs = true` 表示支持 `edns_client_subnet` 查询参数
-/// （P2 冷启动多子网探测用）。
+/// 固定的纯本地 DoH resolver 端点。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolverEndpoint {
     pub url: String,
-    pub ecs: bool,
-}
-
-/// 云端下发的动态端点清单（config 表 `cdn_resolver_endpoints`）。
-/// 空 = 使用内置 baseline。三级回退：云端清单 → 缓存（config 表天然就是
-/// 缓存）→ 内置 baseline，任何一级失败都不影响下载功能。
-static DYNAMIC_ENDPOINTS: OnceLock<StdMutex<Vec<ResolverEndpoint>>> = OnceLock::new();
-
-fn dynamic_endpoints() -> &'static StdMutex<Vec<ResolverEndpoint>> {
-    DYNAMIC_ENDPOINTS.get_or_init(|| StdMutex::new(Vec::new()))
-}
-
-/// 云端下发的 ECS 探测子网（config 表 `cdn_ecs_subnets`，JSON 字符串数组，
-/// 形如 `"202.96.128.0/24"`）。仅 IPv4 CIDR（方案：IPv6 hints 只收不下发）。
-static ECS_SUBNETS: OnceLock<StdMutex<Vec<String>>> = OnceLock::new();
-
-/// 单次解析中 ECS 探测查询总数上限（子网 × ECS 端点的乘积裁剪）。
-const MAX_ECS_QUERIES: usize = 8;
-
-/// ECS 子网数量上限。
-const MAX_ECS_SUBNETS: usize = 4;
-
-fn ecs_subnets() -> &'static StdMutex<Vec<String>> {
-    ECS_SUBNETS.get_or_init(|| StdMutex::new(Vec::new()))
-}
-
-/// 校验 ECS 子网字面量：`a.b.c.d/len`，len 1..=32。
-fn ecs_subnet_valid(s: &str) -> bool {
-    let Some((ip, len)) = s.split_once('/') else {
-        return false;
-    };
-    ip.parse::<std::net::Ipv4Addr>().is_ok()
-        && len
-            .parse::<u8>()
-            .map(|l| (1..=32).contains(&l))
-            .unwrap_or(false)
-}
-
-/// 安装云端下发的 ECS 子网清单（非法条目丢弃，上限 [`MAX_ECS_SUBNETS`]）。
-pub fn set_ecs_subnets(json: &str) -> usize {
-    let parsed: Vec<String> = serde_json::from_str(json).unwrap_or_default();
-    let valid: Vec<String> = parsed
-        .into_iter()
-        .filter(|s| ecs_subnet_valid(s))
-        .take(MAX_ECS_SUBNETS)
-        .collect();
-    let n = valid.len();
-    if let Ok(mut subs) = ecs_subnets().lock() {
-        *subs = valid;
-    }
-    if let Ok(mut cache) = resolve_cache().lock() {
-        cache.clear();
-    }
-    n
-}
-
-/// Engine 启动时从 config 表读回 ECS 子网清单。
-pub(crate) async fn load_ecs_from_config(db: &crate::db::Db) {
-    if let Ok(Some(raw)) = db.get_config("cdn_ecs_subnets").await
-        && !raw.trim().is_empty()
-    {
-        set_ecs_subnets(&raw);
-    }
-}
-
-/// 解析并安装云端下发的端点清单。**向后兼容两种元素形式**：纯字符串
-/// `"https://..."`（ecs=false）或对象 `{"url":"https://...","ecs":true}`。
-/// 校验（§1.2 规则 3）：强制 `https://` scheme 白名单 + 数量 ≤
-/// [`MAX_DOH_ENDPOINTS`]——管理面被攻破也无法把客户端解析流量导向明文/
-/// 任意端点。非法条目静默丢弃；整体解析失败或结果为空 → 清空动态清单
-/// （回退内置 baseline）。返回生效条数。
-pub fn set_dynamic_endpoints(json: &str) -> usize {
-    let parsed: Vec<serde_json::Value> = serde_json::from_str(json).unwrap_or_default();
-    let valid: Vec<ResolverEndpoint> = parsed
-        .into_iter()
-        .filter_map(|v| match v {
-            serde_json::Value::String(url) => Some(ResolverEndpoint { url, ecs: false }),
-            serde_json::Value::Object(map) => {
-                let url = map.get("url")?.as_str()?.to_string();
-                let ecs = map.get("ecs").and_then(|e| e.as_bool()).unwrap_or(false);
-                Some(ResolverEndpoint { url, ecs })
-            }
-            _ => None,
-        })
-        .filter(|e| endpoint_allowed(&e.url))
-        .take(MAX_DOH_ENDPOINTS)
-        .collect();
-    let n = valid.len();
-    if let Ok(mut eps) = dynamic_endpoints().lock() {
-        *eps = valid;
-    }
-    // 清单变化使旧解析结果失去代表性：清空 host 级候选缓存。
-    if let Ok(mut cache) = resolve_cache().lock() {
-        cache.clear();
-    }
-    log_info!("[cdn-resolver] 动态 resolver 端点已更新: {} 条生效", n);
-    n
-}
-
-/// Engine 启动时从 config 表读回动态端点清单（与健康度加载同一生命周期点）。
-pub(crate) async fn load_endpoints_from_config(db: &crate::db::Db) {
-    if let Ok(Some(raw)) = db.get_config("cdn_resolver_endpoints").await
-        && !raw.trim().is_empty()
-    {
-        set_dynamic_endpoints(&raw);
-    }
-}
-
-/// 当前生效的端点清单：动态非空用动态，否则内置 baseline。
-fn effective_endpoints() -> Vec<ResolverEndpoint> {
-    if let Ok(eps) = dynamic_endpoints().lock()
-        && !eps.is_empty()
-    {
-        return eps.clone();
-    }
-    builtin_endpoints()
 }
 
 /// 解析聚合结果。
@@ -195,8 +71,8 @@ fn resolve_cache() -> &'static StdMutex<std::collections::HashMap<String, (Insta
     RESOLVE_CACHE.get_or_init(|| StdMutex::new(std::collections::HashMap::new()))
 }
 
-/// DoH / hints 共用轻量 client（懒建一次）：无代理、短超时、严格 TLS。
-/// 构建失败（极罕见）→ None，DoH/hints 来源整体禁用，系统 DNS 仍工作。
+/// DoH 轻量 client（懒建一次）：无代理、短超时、严格 TLS。
+/// 构建失败（极罕见）→ None，DoH 来源整体禁用，系统 DNS 仍工作。
 static LIGHT_CLIENT: OnceLock<Option<reqwest::Client>> = OnceLock::new();
 
 pub(crate) fn light_client() -> Option<&'static reqwest::Client> {
@@ -225,14 +101,6 @@ struct DohAnswer {
     #[serde(rename = "type")]
     rtype: u16,
     data: String,
-}
-
-/// 校验 DoH 端点是否可用：https scheme（IP-literal 端点自然满足）。
-/// 非 https 一律拒绝——resolver 流量绝不允许降级明文（§1.2 规则 3）。
-fn endpoint_allowed(endpoint: &str) -> bool {
-    reqwest::Url::parse(endpoint)
-        .map(|u| u.scheme() == "https")
-        .unwrap_or(false)
 }
 
 /// 从 DoH JSON 应答中提取 A/AAAA 记录的 IP（容忍 CNAME 等其他记录混入）。
@@ -288,18 +156,12 @@ fn merge_candidates(system: Vec<IpAddr>, labeled: Vec<(String, Vec<IpAddr>)>) ->
     }
 }
 
-/// 查询单个 DoH 端点的一种记录类型。`ecs_subnet` 非空时追加
-/// `edns_client_subnet` 参数（Google JSON API 约定，AliDNS 兼容）——
-/// 用于 P2 冷启动的多子网低置信候选探测。任何失败（超时/非 2xx/解析
-/// 失败）→ 空。
-async fn query_doh(endpoint: &str, host: &str, rtype: &str, ecs_subnet: &str) -> Vec<IpAddr> {
+/// 查询单个 DoH 端点的一种记录类型。任何失败（超时/非 2xx/解析失败）→ 空。
+async fn query_doh(endpoint: &str, host: &str, rtype: &str) -> Vec<IpAddr> {
     let Some(client) = light_client() else {
         return Vec::new();
     };
-    let mut url = format!("{endpoint}?name={host}&type={rtype}");
-    if !ecs_subnet.is_empty() {
-        url.push_str(&format!("&edns_client_subnet={ecs_subnet}"));
-    }
+    let url = format!("{endpoint}?name={host}&type={rtype}");
     let fut = async {
         let resp = client
             .get(&url)
@@ -339,8 +201,7 @@ pub async fn resolve_candidates(host: &str, port: u16) -> CandidateSet {
         return set.clone();
     }
 
-    // 动态清单（云端下发，已在 set_dynamic_endpoints 校验）→ 内置 baseline。
-    let endpoints = effective_endpoints();
+    let endpoints = builtin_endpoints();
 
     // 系统 DNS 与所有 DoH 端点（A + AAAA 各一请求）全并发；各自独立超时。
     let system_fut = query_system_dns(host, port);
@@ -348,35 +209,14 @@ pub async fn resolve_candidates(host: &str, port: u16) -> CandidateSet {
         let url = ep.url.clone();
         let label = format!("doh:{}", endpoint_host(&ep.url));
         async move {
-            let (v4, v6) = futures_util::join!(
-                query_doh(&url, host, "A", ""),
-                query_doh(&url, host, "AAAA", "")
-            );
+            let (v4, v6) =
+                futures_util::join!(query_doh(&url, host, "A"), query_doh(&url, host, "AAAA"));
             let mut ips = v4;
             ips.extend(v6);
             (label, ips)
         }
     });
-    // ECS 多子网低置信探测（P2）：仅对 ecs 端点 × 云端下发子网，总量封顶。
-    // 结果作为独立来源【排在常规应答之后】合并（低置信 → 排后，仅扩大
-    // 候选池；connect 预筛与 EWMA 实测永远覆盖先验）。
-    let subnets: Vec<String> = ecs_subnets().lock().map(|s| s.clone()).unwrap_or_default();
-    let ecs_pairs: Vec<(String, String)> = endpoints
-        .iter()
-        .filter(|ep| ep.ecs)
-        .flat_map(|ep| subnets.iter().map(move |s| (ep.url.clone(), s.clone())))
-        .take(MAX_ECS_QUERIES)
-        .collect();
-    let ecs_futs = ecs_pairs.iter().map(|(url, subnet)| {
-        let label = format!("ecs:{}", endpoint_host(url));
-        async move { (label, query_doh(url, host, "A", subnet).await) }
-    });
-    let (system, mut doh, ecs) = futures_util::join!(
-        system_fut,
-        futures_util::future::join_all(doh_futs),
-        futures_util::future::join_all(ecs_futs)
-    );
-    doh.extend(ecs);
+    let (system, doh) = futures_util::join!(system_fut, futures_util::future::join_all(doh_futs));
 
     let set = merge_candidates(system, doh);
     log_info!(
@@ -395,11 +235,7 @@ pub async fn resolve_candidates(host: &str, port: u16) -> CandidateSet {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use super::{
-        DohJson, MAX_DOH_ENDPOINTS, MAX_ECS_SUBNETS, ResolverEndpoint, builtin_endpoints,
-        effective_endpoints, endpoint_allowed, extract_ips, merge_candidates,
-        set_dynamic_endpoints, set_ecs_subnets,
-    };
+    use super::{DohJson, ResolverEndpoint, builtin_endpoints, extract_ips, merge_candidates};
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     fn v4(n: u8) -> IpAddr {
@@ -438,64 +274,16 @@ mod tests {
     }
 
     #[test]
-    fn endpoint_whitelist_rejects_non_https() {
-        assert!(endpoint_allowed("https://223.5.5.5/resolve"));
-        assert!(!endpoint_allowed("http://223.5.5.5/resolve"));
-        assert!(!endpoint_allowed("ftp://x"));
-        assert!(!endpoint_allowed("not a url"));
-    }
-
-    /// 动态清单校验与回退（同进程全局态：结束时恢复空清单，避免串扰）。
-    #[test]
-    fn dynamic_endpoints_validate_and_fall_back() {
-        // 非法条目（http/垃圾）被丢弃，超量截断；字符串与对象两种形式混用。
-        let mut many: Vec<serde_json::Value> = (0..20)
-            .map(|i| serde_json::json!({"url": format!("https://10.0.0.{i}/dns-query"), "ecs": i % 2 == 0}))
-            .collect();
-        many.push(serde_json::json!("http://evil.example/resolve"));
-        many.push(serde_json::json!("not a url"));
-        many.push(serde_json::json!(42));
-        let json = serde_json::to_string(&many).unwrap();
-        assert_eq!(set_dynamic_endpoints(&json), MAX_DOH_ENDPOINTS);
-        assert_eq!(effective_endpoints().len(), MAX_DOH_ENDPOINTS);
-        assert!(
-            effective_endpoints()
-                .iter()
-                .all(|e| e.url.starts_with("https://"))
-        );
-        // ecs 标志逐条保留。
-        assert!(effective_endpoints()[0].ecs);
-        assert!(!effective_endpoints()[1].ecs);
-        // 纯字符串形式（向后兼容）→ ecs=false。
-        assert_eq!(set_dynamic_endpoints(r#"["https://9.9.9.9/dns-query"]"#), 1);
+    fn builtin_resolvers_are_fixed_https_ip_endpoints() {
+        let endpoints = builtin_endpoints();
+        assert_eq!(endpoints.len(), 2);
+        assert!(endpoints.iter().all(|e| e.url.starts_with("https://")));
         assert_eq!(
-            effective_endpoints(),
-            vec![ResolverEndpoint {
-                url: "https://9.9.9.9/dns-query".into(),
-                ecs: false
-            }]
+            endpoints[0],
+            ResolverEndpoint {
+                url: "https://223.5.5.5/resolve".into()
+            }
         );
-        // 全非法 → 生效 0 条 → 回退内置 baseline。
-        assert_eq!(set_dynamic_endpoints(r#"["http://a", "junk"]"#), 0);
-        assert_eq!(effective_endpoints(), builtin_endpoints());
-        // 整体解析失败 → 同样回退 baseline。
-        assert_eq!(set_dynamic_endpoints("{broken"), 0);
-        assert_eq!(effective_endpoints(), builtin_endpoints());
-    }
-
-    #[test]
-    fn ecs_subnets_validated_and_capped() {
-        assert_eq!(
-            set_ecs_subnets(
-                r#"["202.96.128.0/24","junk","1.2.3.4","10.0.0.0/8","172.16.0.0/12","192.168.0.0/16","100.64.0.0/10"]"#
-            ),
-            MAX_ECS_SUBNETS,
-            "非法条目丢弃后按上限截断"
-        );
-        assert_eq!(set_ecs_subnets("[]"), 0);
-        assert_eq!(set_ecs_subnets("broken"), 0);
-        // 边界：len 0 与 33 非法。
-        assert_eq!(set_ecs_subnets(r#"["1.2.3.0/0","1.2.3.0/33"]"#), 0);
     }
 
     #[test]
