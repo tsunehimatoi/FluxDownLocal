@@ -33,6 +33,7 @@ CLAUDE.md
 .pub-cache/
 .pub/
 /build/
+/dist/
 /coverage/
 
 # Symbolication related
