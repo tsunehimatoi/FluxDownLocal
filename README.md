@@ -48,7 +48,7 @@
 - Visual Studio 2022（Windows C++ 桌面开发） / CMake & Ninja
 - [Inno Setup 6](https://jrsoftware.org/isinfo.php)（用于打包 Windows 安装程序）
 
-### 构建 Windows 安装包
+### 构建 Windows 安装包与便携版
 ```powershell
 flutter pub get
 cargo check -p hub --lib
@@ -57,12 +57,27 @@ cargo check -p hub --lib
 powershell -ExecutionPolicy Bypass -File scripts/build_custom_windows.ps1 `
   -Version 0.1.44 `
   -OutputDirectory dist
+
+# 压缩生成免安装绿色便携版
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\FluxDown-0.1.44-windows-x64-portable.zip -Force
 ```
 
-### 构建 CLI 工具
+### 构建 CLI 命令行工具
 ```powershell
 cargo build --release -p fluxdown_cli
+Copy-Item target\release\fluxdown.exe dist\fluxdown.exe -Force
+Compress-Archive -Path target\release\fluxdown.exe -DestinationPath dist\FluxDown-0.1.44-windows-x64-cli.zip -Force
 ```
+
+### 构建浏览器扩展
+```powershell
+cd fluxDown
+npm ci
+npm run build          # Chrome (MV3)
+npm run build:firefox  # Firefox
+```
+
+详细全端打包与 Release 发布 SOP 参见文档 [`.omp/knowledge/ops.md`](.omp/knowledge/ops.md)。
 
 ---
 

@@ -27,6 +27,97 @@ Dart 与 Rust 两端写**同一目录同一文件**，统一格式 `HH:MM:SS.mmm
 
 ---
 
+## 本地全端打包与 GitHub Releases 发布流程（SOP）
+
+适用于在本地 Windows 开发机上打包全部客户端产物并归档发布到 GitHub Releases。
+
+### 1. 产物输出规范（`dist/` 目录）
+
+| 目标端 / 组件 | 构建方式 | 输出文件名 |
+|---|---|---|
+| **Windows 安装程序** | `flutter build windows --release` + Inno Setup (`ISCC.exe`) | `FluxDown-<version>-windows-x64-setup.exe` |
+| **Windows 便携压缩包** | 打包 `build/windows/x64/runner/Release/*` | `FluxDown-<version>-windows-x64-portable.zip` |
+| **CLI 命令行工具** | `cargo build --release -p fluxdown_cli` | `fluxdown.exe` 与 `FluxDown-<version>-windows-x64-cli.zip` |
+| **Chrome 扩展 (MV3)** | `cd fluxDown && npm run build` 打包 `.output/chrome-mv3/*` | `FluxDown-<ext_version>-chrome.zip` |
+| **Firefox 扩展** | `cd fluxDown && npm run build:firefox` 打包 `.output/firefox-mv2/*` | `FluxDown-<ext_version>-firefox.zip` |
+| **Edge 专用扩展** | 复制 Chrome 产物并剔除 `manifest.json` 中的 `key` 字段后压缩 | `FluxDown-<ext_version>-edge.zip` |
+| **油猴脚本** | 归档 `userscript/fluxdown.user.js` | `fluxdown.user.js` |
+
+---
+
+### 2. 标准打包命令
+
+#### Step 1: 准备与代码生成
+```bash
+rinf gen
+pwsh -Command "New-Item -ItemType Directory -Path dist -Force | Out-Null"
+```
+
+#### Step 2: 浏览器扩展构建与打包
+```powershell
+# 1. 构建 Chrome MV3 与 Firefox
+cd fluxDown
+npm run build
+npm run build:firefox
+cd ..
+
+# 2. 压缩 Chrome 与 Firefox 包
+pwsh -Command @"
+  Compress-Archive -Path 'fluxDown\.output\chrome-mv3\*' -DestinationPath 'dist\FluxDown-0.1.29-chrome.zip' -Force
+  Compress-Archive -Path 'fluxDown\.output\firefox-mv2\*' -DestinationPath 'dist\FluxDown-0.1.29-firefox.zip' -Force
+
+  # 3. 生成 Edge 专用包（剔除 manifest key 字段）
+  `$edgeTemp = Join-Path `$env:TEMP 'fluxdown_edge_build'
+  if (Test-Path `$edgeTemp) { Remove-Item `$edgeTemp -Recurse -Force }
+  Copy-Item 'fluxDown\.output\chrome-mv3' `$edgeTemp -Recurse
+  `$edgeManifest = Join-Path `$edgeTemp 'manifest.json'
+  `$json = Get-Content `$edgeManifest -Raw | ConvertFrom-Json
+  `$json.PSObject.Properties.Remove('key')
+  `$json | ConvertTo-Json -Depth 10 | Set-Content `$edgeManifest -Encoding utf8
+  Compress-Archive -Path "`$edgeTemp\*" -DestinationPath 'dist\FluxDown-0.1.29-edge.zip' -Force
+  Remove-Item `$edgeTemp -Recurse -Force
+"@
+```
+
+#### Step 3: CLI 命令行工具构建与打包
+```powershell
+cargo build --release -p fluxdown_cli
+pwsh -Command @"
+  Copy-Item 'target\release\fluxdown.exe' 'dist\fluxdown.exe' -Force
+  Compress-Archive -Path 'target\release\fluxdown.exe' -DestinationPath 'dist\FluxDown-0.1.44-windows-x64-cli.zip' -Force
+"@
+```
+
+#### Step 4: Windows 桌面端构建与安装包/便携包生成
+```powershell
+# 运行内置打包脚本构建 Release 并生成 Inno Setup 安装包
+pwsh -File scripts\build_custom_windows.ps1 -Version 0.1.44 -OutputDirectory dist
+
+# 制作绿色免安装便携版 zip
+pwsh -Command "Compress-Archive -Path 'build\windows\x64\runner\Release\*' -DestinationPath 'dist\FluxDown-0.1.44-windows-x64-portable.zip' -Force"
+```
+
+#### Step 5: 归档油猴用户脚本与校验
+```powershell
+pwsh -Command @"
+  Copy-Item 'userscript\fluxdown.user.js' 'dist\fluxdown.user.js' -Force
+  Get-FileHash dist\* -Algorithm SHA256 | Select-Object @{Name='File';Expression={Split-Path `$_.Path -Leaf}}, Hash
+"@
+```
+
+---
+
+### 3. 发布至 GitHub Releases 流程
+
+1. **分支对齐**：确保 `main` 与 `stable` 分支已合并最新代码并推送到 remote（`origin`）。
+2. **创建/更新 Release 并上传附件**：
+   使用 GitHub REST API（带 `repo` 权限的 Personal Access Token / OAuth Token）：
+   - `POST https://api.github.com/repos/{owner}/{repo}/releases` 创建 Release（指定 tag 如 `v0.1.44`，目标分支 `main`）。
+   - 遍历 `dist/` 目录，逐个向 `https://uploads.github.com/repos/{owner}/{repo}/releases/{release_id}/assets?name={filename}` 发送 `POST` 请求上传二进制数据（设置对应 `Content-Type`）。
+3. **验证**：访问仓库 Release 页面（例如 `https://github.com/<owner>/<repo>/releases`）核对附件清单与 SHA256 摘要。
+
+---
+
 ## 设计文档实现状态（`docs/`）
 
 > ⚠️ `docs/` 在 `.gitignore` 里（零文件入库），下列设计文档**只存在于本机工作副本**；契约与不变式一律写回 `AGENTS.md` / 本目录，别只留在 `docs/`。
