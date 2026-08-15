@@ -33,16 +33,16 @@ Dart 与 Rust 两端写**同一目录同一文件**，统一格式 `HH:MM:SS.mmm
 
 ### 1. 产物输出规范（`dist/` 目录）
 
-> 💡 **版本命名规则**：采用 `v<UpstreamVersion>-local.<N>`（如 `0.4.6-local.1`），`<UpstreamVersion>` 取自上游基准版本，`-local.<N>` 为本地精简版构建/迭代序号。详见 [`.omp/knowledge/upstream-sync.md` §3.5](upstream-sync.md)。
+版本命名规则：采用 `v<UpstreamVersion>-local.<N>`（如 `0.4.6-local.1`），`<UpstreamVersion>` 取自上游基准版本，`-local.<N>` 为本地精简版构建/迭代序号。详见 [`.omp/knowledge/upstream-sync.md` §3.5](upstream-sync.md)。
 
 | 目标端 / 组件 | 构建方式 | 输出文件名 |
 |---|---|---|
 | **Windows 安装程序** | `flutter build windows --release` + Inno Setup (`ISCC.exe`) | `FluxDown-<version>-windows-x64-setup.exe` |
 | **Windows 便携压缩包** | 打包 `build/windows/x64/runner/Release/*` | `FluxDown-<version>-windows-x64-portable.zip` |
 | **CLI 命令行工具** | `cargo build --release -p fluxdown_cli` | `fluxdown.exe` 与 `FluxDown-<version>-windows-x64-cli.zip` |
-| **Chrome 扩展 (MV3)** | `cd fluxDown && npm run build` 打包 `.output/chrome-mv3/*` | `FluxDown-<ext_version>-chrome.zip` |
-| **Firefox 扩展** | `cd fluxDown && npm run build:firefox` 打包 `.output/firefox-mv2/*` | `FluxDown-<ext_version>-firefox.zip` |
-| **Edge 专用扩展** | 复制 Chrome 产物并剔除 `manifest.json` 中的 `key` 字段后压缩 | `FluxDown-<ext_version>-edge.zip` |
+| **Chrome 扩展 (MV3)** | `cd fluxDown && npm run build` 打包 `.output/chrome-mv3/*` | `FluxDown-<version>-chrome.zip` |
+| **Firefox 扩展** | `cd fluxDown && npm run build:firefox` 打包 `.output/firefox-mv2/*` | `FluxDown-<version>-firefox.zip` |
+| **Edge 专用扩展** | 复制 Chrome 产物并剔除 `manifest.json` 中的 `key` 字段后压缩 | `FluxDown-<version>-edge.zip` |
 | **油猴脚本** | 归档 `userscript/fluxdown.user.js` | `fluxdown.user.js` |
 
 ---
@@ -67,10 +67,10 @@ npm run build
 npm run build:firefox
 cd ..
 
-# 2. 压缩 Chrome 与 Firefox 包
+# 2. 压缩 Chrome 与 Firefox 包（统一遵循 0.4.6-local.1 命名）
 pwsh -Command @"
-  Compress-Archive -Path 'fluxDown\.output\chrome-mv3\*' -DestinationPath 'dist\FluxDown-0.4.6-chrome.zip' -Force
-  Compress-Archive -Path 'fluxDown\.output\firefox-mv2\*' -DestinationPath 'dist\FluxDown-0.4.6-firefox.zip' -Force
+  Compress-Archive -Path 'fluxDown\.output\chrome-mv3\*' -DestinationPath 'dist\FluxDown-0.4.6-local.1-chrome.zip' -Force
+  Compress-Archive -Path 'fluxDown\.output\firefox-mv2\*' -DestinationPath 'dist\FluxDown-0.4.6-local.1-firefox.zip' -Force
 
   # 3. 生成 Edge 专用包（剔除 manifest key 字段）
   `$edgeTemp = Join-Path `$env:TEMP 'fluxdown_edge_build'
@@ -80,7 +80,7 @@ pwsh -Command @"
   `$json = Get-Content `$edgeManifest -Raw | ConvertFrom-Json
   `$json.PSObject.Properties.Remove('key')
   `$json | ConvertTo-Json -Depth 10 | Set-Content `$edgeManifest -Encoding utf8
-  Compress-Archive -Path "`$edgeTemp\*" -DestinationPath 'dist\FluxDown-0.4.6-edge.zip' -Force
+  Compress-Archive -Path "`$edgeTemp\*" -DestinationPath 'dist\FluxDown-0.4.6-local.1-edge.zip' -Force
   Remove-Item `$edgeTemp -Recurse -Force
 "@
 ```
@@ -117,8 +117,9 @@ pwsh -Command @"
 
 1. **分支对齐**：确保 `main` 与 `stable` 分支已合并最新代码并推送到 remote（`origin`）。
 2. **创建/更新 Release 并上传附件**：
-   使用 GitHub REST API（带 `repo` 权限的 Personal Access Token / OAuth Token）：
-   - `POST https://api.github.com/repos/{owner}/{repo}/releases` 创建 Release（指定 tag 如 `v0.1.44`，目标分支 `main`）。
+   使用 GitHub REST API（带 `repo` 权限的 Token）：
+   - Release 说明仅保留纯表格形式的下载清单与 SHA256 校验码，不放置营销或多余文案。
+   - `POST https://api.github.com/repos/{owner}/{repo}/releases` 创建 Release（指定 tag 如 `v0.4.6-local.1`，目标分支 `main`）。
    - 遍历 `dist/` 目录，逐个向 `https://uploads.github.com/repos/{owner}/{repo}/releases/{release_id}/assets?name={filename}` 发送 `POST` 请求上传二进制数据（设置对应 `Content-Type`）。
 3. **验证**：访问仓库 Release 页面（例如 `https://github.com/<owner>/<repo>/releases`）核对附件清单与 SHA256 摘要。
 

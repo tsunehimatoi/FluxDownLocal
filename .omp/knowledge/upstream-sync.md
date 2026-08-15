@@ -32,7 +32,7 @@
                                 │
         ┌───────────────────────┼───────────────────────┐
         ▼                       ▼                       ▼
- 🟢 1. 完全接纳 (Pick)   🟡 2. 裁剪接纳 (Adapt)   🔴 3. 彻底排除 (Skip)
+   1. 完全接纳 (Pick)      2. 裁剪接纳 (Adapt)      3. 彻底排除 (Skip)
   纯下载/协议/API/修复    核心修复混合了云端/设置    账号/套餐/遥测/更新/嗅探
         │                       │                       │
  ┌──────┴──────────────┐ ┌──────┴──────────────┐ ┌──────┴──────────────┐
@@ -41,11 +41,11 @@
  └─────────────────────┘ └─────────────────────┘ └─────────────────────┘
 ```
 
-### 🟢 类别 1：完全接纳（Pick As-Is）
+### 类别 1：完全接纳（Pick As-Is）
 - **特征**：纯下载引擎（`native/engine/*`）、底层接口（`native/api/*`）、CLI 工具（`native/cli/*`）、NMH 注册（`native/nmh/*`）、跨平台窗口/系统托盘基础修复、纯单元测试。
 - **操作**：直接 `git cherry-pick <commit-hash>`。
 
-### 🟡 类别 2：裁剪接纳（Pick & Adapt）
+### 类别 2：裁剪接纳（Pick & Adapt）
 - **特征**：包含有价值的核心功能（如多选下载、分类目录、界面交互优化），但该 commit 同时碰了 `settings_page.dart`、`Cargo.toml`、`translations` 或已删除的云端模块。
 - **操作**：
   1. 使用无提交模式拣选：`git cherry-pick -n <commit-hash>`
@@ -53,7 +53,7 @@
   3. 手工在精简版的相应位置补齐核心改动。
   4. 保持原 commit message 或附加 `(adapted for streamlined)` 后提交：`git commit -C <commit-hash>`。
 
-### 🔴 类别 3：彻底排除（Skip / Drop）
+### 类别 3：彻底排除（Skip / Drop）
 - **特征**：
   - FluxDown 官方账号、注册、登录、Origin ID、套餐购买、微信/支付宝付款。
   - 云端任务同步、配置云同步、云端设备协同、云 CDN 配置与健康上报。
@@ -228,34 +228,34 @@ git describe --tags (git rev-parse upstream/main) --match "v*"
 ### [2026-08-15 同步记录]
 - **审查区间**: `ed33419` .. `86c6cf8`（共计 30 个上游提交）
 - **已接纳提交（16 项）**:
-  1. `7ce6a94` - fix: 剥掉 Content-Disposition 引号包裹的 ext-value（🟢 类别 1）
-  2. `de756cd` - fix(engine): 默认下载目录改用系统 API 解析（🟢 类别 1）
-  3. `d5c8928` - feat(api): 本机服务新增 CORS 豁免开关与局域网地址选择（🟢 类别 1）
-  4. `81a2550` - fix(engine): webhook 预设统一改用 JSON 请求体（🟢 类别 1）
-  5. `15d3a00` - chore: 统一行尾符策略为 LF(.gitattributes + .editorconfig)（🟢 类别 1）
-  6. `faa3d30` - feat(downloader): 支持失效任务清理与重新下载（🟢 类别 1）
-  7. `e4522c3` - feat(tasks): 支持复制落盘文件并完善文件跟踪同步（🟢 类别 1）
-  8. `f4a7c62` - feat(settings): 一键分类目录并对齐 Web 落盘语义（🟡 类别 2 适配）
-  9. `0bf33d4` - fix(settings): 输入框未回车离开即丢失编辑（🟡 类别 2 适配）
-  10. `e1239c6` - feat(ui): RSS 条目标题悬浮显示全文（🟢 类别 1）
-  11. `9e98d43` - feat(ui): 任务操作按钮补悬浮说明气泡（🟢 类别 1）
-  12. `03efe74` - fix(linux): 补全 StatusNotifierItem 属性并监视托盘宿主（🟢 类别 1）
-  13. `fa1e5d5` - feat(ui): 应用图标自定义扩展至 Linux/macOS 并同步快捷方式图标（🟢 类别 1）
-  14. `8cc8fe9` - fix(ui): 修复 macOS 关闭到托盘后 Dock 图标常驻（🟢 类别 1）
-  15. `37c7ecf` - feat(ui): 下载列表支持 Ctrl/Shift 多选与鼠标框选（🟢 类别 1）
-  16. `9914ab7` - feat(hub): 设置页新增 Doctor 环境诊断与一键修复（🟡 类别 2 适配）
+  1. `7ce6a94` - fix: 剥掉 Content-Disposition 引号包裹的 ext-value (类别 1)
+  2. `de756cd` - fix(engine): 默认下载目录改用系统 API 解析 (类别 1)
+  3. `d5c8928` - feat(api): 本机服务新增 CORS 豁免开关与局域网地址选择 (类别 1)
+  4. `81a2550` - fix(engine): webhook 预设统一改用 JSON 请求体 (类别 1)
+  5. `15d3a00` - chore: 统一行尾符策略为 LF(.gitattributes + .editorconfig) (类别 1)
+  6. `faa3d30` - feat(downloader): 支持失效任务清理与重新下载 (类别 1)
+  7. `e4522c3` - feat(tasks): 支持复制落盘文件并完善文件跟踪同步 (类别 1)
+  8. `f4a7c62` - feat(settings): 一键分类目录并对齐 Web 落盘语义 (类别 2 适配)
+  9. `0bf33d4` - fix(settings): 输入框未回车离开即丢失编辑 (类别 2 适配)
+  10. `e1239c6` - feat(ui): RSS 条目标题悬浮显示全文 (类别 1)
+  11. `9e98d43` - feat(ui): 任务操作按钮补悬浮说明气泡 (类别 1)
+  12. `03efe74` - fix(linux): 补全 StatusNotifierItem 属性并监视托盘宿主 (类别 1)
+  13. `fa1e5d5` - feat(ui): 应用图标自定义扩展至 Linux/macOS 并同步快捷方式图标 (类别 1)
+  14. `8cc8fe9` - fix(ui): 修复 macOS 关闭到托盘后 Dock 图标常驻 (类别 1)
+  15. `37c7ecf` - feat(ui): 下载列表支持 Ctrl/Shift 多选与鼠标框选 (类别 1)
+  16. `9914ab7` - feat(hub): 设置页新增 Doctor 环境诊断与一键修复 (类别 2 适配)
 - **已排除提交（14 项）与理由**:
-  1. `86c6cf8` - feat(cloud): 套餐徽标本地快照秒开与注册密码明文切换（🔴 排除：官方云与套餐）
-  2. `eb9d758` - 简化定价模型说明，删除冗余项（🔴 排除：商业定价）
-  3. `7e9d346` - feat(pricing): 更新定价模型说明与云端范围定义（🔴 排除：商业定价）
-  4. `e0ef964` - feat(cloud): 客户端与官网同步买断制套餐降级拦截（🔴 排除：官方云与套餐降级）
-  5. `c59df2f` - feat(account): 账户昵称自助修改与套餐徽标可配置视觉样式（🔴 排除：官方账号系统）
-  6. `413db20` - feat(webbuy): 在二维码中添加微信支付logo（🔴 排除：官网支付）
-  7. `6847099` - feat(cloud): 账户页支持自助修改 Origin ID（🔴 排除：官方云 ID）
-  8. `722deee` - feat(account): 账户页接入云端套餐购买与官网动态定价（🔴 排除：官方账号与套餐）
-  9. `b6cb923` - fix(website): 将客服入口并入社区菜单（🔴 排除：官网运营）
-  10. `f8d37c6` - fix(website): 修复 LangBot 组件访问访客本机（🔴 排除：官网机器人）
-  11. `2c4cc84` - feat(website): 调整翻译贡献流程并移除演示入口（🔴 排除：官网页面）
-  12. `8c32d69` - feat(cloud): 完善 Web 与 PC 多设备任务协同（🔴 排除：官方云多端协同）
-  13. `955f373` - feat(rules): Add no-meta-in-comments rule（🔴 排除：上游规则临时提交）
-  14. `51387a7` - chore(rules): 移除 no-meta-in-comments 规则（🔴 排除：已在下一提交中撤销）
+  1. `86c6cf8` - feat(cloud): 套餐徽标本地快照秒开与注册密码明文切换 (排除：官方云与套餐)
+  2. `eb9d758` - 简化定价模型说明，删除冗余项 (排除：商业定价)
+  3. `7e9d346` - feat(pricing): 更新定价模型说明与云端范围定义 (排除：商业定价)
+  4. `e0ef964` - feat(cloud): 客户端与官网同步买断制套餐降级拦截 (排除：官方云与套餐降级)
+  5. `c59df2f` - feat(account): 账户昵称自助修改与套餐徽标可配置视觉样式 (排除：官方账号系统)
+  6. `413db20` - feat(webbuy): 在二维码中添加微信支付logo (排除：官网支付)
+  7. `6847099` - feat(cloud): 账户页支持自助修改 Origin ID (排除：官方云 ID)
+  8. `722deee` - feat(account): 账户页接入云端套餐购买与官网动态定价 (排除：官方账号与套餐)
+  9. `b6cb923` - fix(website): 将客服入口并入社区菜单 (排除：官网运营)
+  10. `f8d37c6` - fix(website): 修复 LangBot 组件访问访客本机 (排除：官网机器人)
+  11. `2c4cc84` - feat(website): 调整翻译贡献流程并移除演示入口 (排除：官网页面)
+  12. `8c32d69` - feat(cloud): 完善 Web 与 PC 多设备任务协同 (排除：官方云多端协同)
+  13. `955f373` - feat(rules): Add no-meta-in-comments rule (排除：上游规则临时提交)
+  14. `51387a7` - chore(rules): 移除 no-meta-in-comments 规则 (排除：已在下一提交中撤销)
