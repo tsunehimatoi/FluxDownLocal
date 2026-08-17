@@ -56,6 +56,8 @@ Future<void> _runStartupStep(
       stack,
     );
   }
+}
+
 /// 记录 Flutter 官方定义的启动边界：引擎完成首帧栅格化。
 void _logFirstFrameWhenRasterized(Stopwatch startupStopwatch) {
   unawaited(
@@ -323,6 +325,8 @@ String _decodeFilePath(String arg) {
   return (url: url, filename: filename);
 }
 
+typedef ProtocolRequest = ({String url, String filename});
+
 class FluxDownApp extends StatefulWidget {
   final ThemeProvider themeProvider;
   final LocaleNotifier localeNotifier;
@@ -331,7 +335,7 @@ class FluxDownApp extends StatefulWidget {
   final List<String> initialTorrentFiles;
 
   /// fluxdown:// 协议请求（Windows 注册表协议处理器经启动参数传入）。
-  final List<({String url, String filename})> initialProtocolRequests;
+  final List<ProtocolRequest> initialProtocolRequests;
 
   const FluxDownApp({
     super.key,

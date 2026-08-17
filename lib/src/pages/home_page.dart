@@ -129,9 +129,6 @@ class _HomePageState extends State<HomePage> {
     // 「任务完成后关机」服务（纯内存状态，重启不保留）
     ShutdownService.instance.bind(_controller);
     // 本地设备互联（局域网配对，免账号）：与账号体系无关，启动即接线监听。
-    // 移动端不支持局域网直连（native/hub/build.rs 在 android/ios 上不编译
-    // hub_link，LocalPairingService.supported 恒为 false），显式跳过更
-    // 清晰——虽然 attach() 内部对 supported==false 也会 early return。
     if (LocalPairingService.instance.supported) {
       unawaited(LocalPairingService.instance.attach());
       LocalPairingService.instance.addListener(_onLocalPairingChanged);
@@ -141,6 +138,8 @@ class _HomePageState extends State<HomePage> {
       _settingsProvider.addListener(_onSettingsLoadedForAssocPrompt);
     }
   }
+
+
 
   /// BT 重复添加（同 info-hash 已被其他任务下载/做种）→ 提示已有任务。
   StreamSubscription<RustSignalPack<DuplicateTorrentNotice>>? _dupTorrentSub;
@@ -200,6 +199,8 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+
+
   /// 本机作为被添加方收到配对请求（`incomingPairing` 非空）时弹出核验框
   /// （SAS + 60s 倒计时 + 接受/拒绝，见 incoming_pairing_dialog.dart）；
   /// 弹窗自身监听同一服务、会话失效时自动关闭，这里只负责按需打开且防重入。
@@ -216,6 +217,8 @@ class _HomePageState extends State<HomePage> {
       _onLocalPairingChanged();
     });
   }
+
+
 
   /// 浏览器扩展触发下载时，若当前在设置页则自动切回首页。
   void _navigateToHomeFromExternal() {
@@ -247,7 +250,9 @@ class _HomePageState extends State<HomePage> {
     _controller.onTaskCompleted = null;
     _controller.onSegmentsUpdateResult = null;
     _controller.dispose();
-    _settingsProvider.dispose();
+    if (widget.settingsProvider == null) {
+      _settingsProvider.dispose();
+    }
     _viewPrefsStore.dispose();
     super.dispose();
     logInfo('HomePage', 'dispose done');
@@ -278,6 +283,18 @@ class _HomePageState extends State<HomePage> {
     };
     AppMenuCallbacks.selectAll = () {
       if (!mounted || _showSettings || _isRssView) return;
+      // 输入框聚焦时把 Cmd+A 转回文本全选——菜单加速键已吞掉按键事件，
+      // 不转发的话输入框既收不到按键也得不到全选。
+      if (_isTextFieldFocused) {
+        final ctx = FocusManager.instance.primaryFocus?.context;
+        if (ctx != null) {
+          Actions.maybeInvoke(
+            ctx,
+            const SelectAllTextIntent(SelectionChangedCause.keyboard),
+          );
+        }
+        return;
+      }
       if (!_controller.isManageMode) _controller.enterManageMode();
       _controller.selectAllFiltered();
     };
@@ -412,8 +429,12 @@ class _HomePageState extends State<HomePage> {
       return true;
     }
 
-    // Cmd/Ctrl+A → 全选当前筛选列表（自动进入管理模式）。RSS 视图下不适用。
-    if (isMod && event.logicalKey == LogicalKeyboardKey.keyA && !_isRssView) {
+    // Cmd/Ctrl+A → 全选当前筛选列表（自动进入管理模式）。RSS 视图下不
+    // 适用；输入框聚焦时让路——把按键留给输入框做文本全选。
+    if (isMod &&
+        event.logicalKey == LogicalKeyboardKey.keyA &&
+        !_isRssView &&
+        !_isTextFieldFocused) {
       if (!_controller.isManageMode) {
         _controller.enterManageMode();
       }
@@ -520,9 +541,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 是否有文本输入组件（TextField/ShadInput 等，内部均落到 [EditableText]）
-  /// 持有焦点——全局单字母快捷键（V/G/S/Shift+D/↑↓/Space）必须在此时让路，
-  /// 否则会拦截用户在搜索框等处的正常输入。Ctrl/Cmd 组合键与 Esc/Del 不受
-  /// 此守卫影响（现状行为不变）。
+  /// 持有焦点——全局单字母快捷键（V/G/S/Shift+D/↑↓/Space）与 Ctrl/Cmd+A
+  /// 必须在此时让路，否则会拦截用户在搜索框等处的正常输入/文本全选。
+  /// 其余 Ctrl/Cmd 组合键与 Esc/Del 不受此守卫影响。
   bool get _isTextFieldFocused {
     final focus = FocusManager.instance.primaryFocus;
     final ctx = focus?.context;
@@ -632,15 +653,15 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 从 RSS 条目流的「已下载」chip 跳到对应任务（P5 溯源的正向跳转）。
+  /// 从搜索结果 / RSS 条目流直达任务（P5 溯源的正向跳转）。
   ///
-  /// 先退出条目流再选中任务：条目流与任务列表共用主区，不退出的话选中了也
-  /// 看不见。同时把状态页签切回「全部」，否则任务可能被当前页签筛掉。
-  void _revealTaskFromRss(String taskId) {
+  /// 先退出条目流再定位：条目流与任务列表共用主区，不退出的话选中了也
+  /// 看不见。筛选放宽（状态页签/分类/队列）、组展开、滚动定位
+  /// 由 [DownloadController.revealTask] + TaskList 完成。
+  void _revealTask(String taskId) {
     if (taskId.isEmpty) return;
     _rssProvider.select('');
-    _controller.setStatusTab(StatusTab.all);
-    _controller.selectTask(taskId);
+    _controller.revealTask(taskId);
     setState(() => _isDetailOpen = true);
   }
 
@@ -806,7 +827,7 @@ class _HomePageState extends State<HomePage> {
                 if (_rssProvider.selectedSourceId.isEmpty) return taskList!;
                 return RssItemList(
                   provider: _rssProvider,
-                  onOpenTask: _revealTaskFromRss,
+                  onOpenTask: _revealTask,
                   onManage: (sourceId) => showRssManagerDialog(
                     context,
                     _rssProvider,
@@ -973,6 +994,7 @@ class _HomePageState extends State<HomePage> {
                   _controller,
                   _settingsProvider,
                 ),
+                onRevealTask: _revealTask,
                 onNavigateToSettings: (item) {
                   setState(() {
                     _initialSettingsCategory = item.category;
