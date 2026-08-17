@@ -1,10 +1,4 @@
-//! Transparent RC4 stream wrappers for the post-handshake BitTorrent payload.
-//!
-//! The two directions use independent RC4 states (MSE derives a distinct key
-//! for the encrypt and decrypt directions). The wrappers implement
-//! [`tokio::io::AsyncRead`] / [`tokio::io::AsyncWrite`] so that librqbit's
-//! existing `ReadBuf` and `write_all` paths work unchanged once the handshake
-//! has swapped in these streams.
+//! Transparent RC4 stream wrappers for post-handshake traffic.
 
 use std::io;
 use std::pin::Pin;
@@ -14,11 +8,6 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
 use super::rc4::Rc4;
 
-fn write_zero_err() -> io::Error {
-    io::Error::new(io::ErrorKind::WriteZero, "underlying stream returned Ok(0)")
-}
-
-/// Decrypting wrapper around an inbound stream.
 pub struct Rc4Reader<R> {
     inner: R,
     rc4: Rc4,
@@ -26,7 +15,7 @@ pub struct Rc4Reader<R> {
 
 impl<R> Rc4Reader<R> {
     pub fn new(inner: R, rc4: Rc4) -> Self {
-        Rc4Reader { inner, rc4 }
+        Self { inner, rc4 }
     }
 }
 
@@ -38,52 +27,24 @@ impl<R: AsyncRead + Unpin> AsyncRead for Rc4Reader<R> {
     ) -> Poll<io::Result<()>> {
         let this = self.get_mut();
         let before = buf.filled().len();
-        let poll = Pin::new(&mut this.inner).poll_read(cx, buf);
-        if let Poll::Ready(Ok(())) = poll {
-            let newly = buf.filled_mut();
-            this.rc4.apply_keystream(&mut newly[before..]);
+        match Pin::new(&mut this.inner).poll_read(cx, buf) {
+            Poll::Ready(Ok(())) => {
+                this.rc4.apply_keystream(&mut buf.filled_mut()[before..]);
+                Poll::Ready(Ok(()))
+            }
+            other => other,
         }
-        poll
     }
 }
 
-/// Encrypting wrapper around an outbound stream.
 pub struct Rc4Writer<W> {
     inner: W,
     rc4: Rc4,
-    /// Encrypted bytes that have been consumed from the caller's buffer but
-    /// not yet flushed to `inner`.
-    pending: Vec<u8>,
 }
 
 impl<W> Rc4Writer<W> {
     pub fn new(inner: W, rc4: Rc4) -> Self {
-        Rc4Writer {
-            inner,
-            rc4,
-            pending: Vec::new(),
-        }
-    }
-}
-
-impl<W: AsyncWrite + Unpin> Rc4Writer<W> {
-    /// Attempt to drain `pending` into `inner`. Returns the number of bytes
-    /// written so far (the caller applies `drain(..n)` itself).
-    fn poll_drain_pending(
-        mut inner: Pin<&mut W>,
-        pending: &[u8],
-        cx: &mut Context<'_>,
-    ) -> Poll<io::Result<usize>> {
-        let mut written = 0;
-        while written < pending.len() {
-            match inner.as_mut().poll_write(cx, &pending[written..]) {
-                Poll::Ready(Ok(0)) => return Poll::Ready(Err(write_zero_err())),
-                Poll::Ready(Ok(n)) => written += n,
-                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                Poll::Pending => break,
-            }
-        }
-        Poll::Ready(Ok(written))
+        Self { inner, rc4 }
     }
 }
 
@@ -94,67 +55,130 @@ impl<W: AsyncWrite + Unpin> AsyncWrite for Rc4Writer<W> {
         data: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
-
-        // If we still hold encrypted bytes from a previous partial write, those
-        // bytes *are* the ciphertext of the `data` the caller is re-submitting
-        // (tokio's `write_all` re-sends `data[n..]` after a short write). Flush
-        // them first without re-encrypting `data`.
-        if !this.pending.is_empty() {
-            let written =
-                match Self::poll_drain_pending(Pin::new(&mut this.inner), &this.pending, cx) {
-                    Poll::Ready(Ok(n)) => n,
-                    Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                    Poll::Pending => return Poll::Pending,
-                };
-            this.pending.drain(..written);
-            if !this.pending.is_empty() {
-                return Poll::Pending;
-            }
-            return Poll::Ready(Ok(data.len()));
+        if data.is_empty() {
+            return Poll::Ready(Ok(0));
         }
 
-        // No pending ciphertext: encrypt the whole buffer and write it out.
+        // Encrypt with a cloned state. Pending and errors leave the formal RC4
+        // state untouched; a short write commits exactly the accepted prefix.
+        let mut trial = this.rc4.clone();
         let mut encrypted = data.to_vec();
-        this.rc4.apply_keystream(&mut encrypted);
-
-        let mut written = 0;
-        while written < encrypted.len() {
-            match Pin::new(&mut this.inner).poll_write(cx, &encrypted[written..]) {
-                Poll::Ready(Ok(0)) => return Poll::Ready(Err(write_zero_err())),
-                Poll::Ready(Ok(n)) => written += n,
-                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                Poll::Pending => break,
+        trial.apply_keystream(&mut encrypted);
+        match Pin::new(&mut this.inner).poll_write(cx, &encrypted) {
+            Poll::Ready(Ok(n)) => {
+                let accepted = n.min(data.len());
+                this.rc4.apply_keystream(&mut encrypted[..accepted]);
+                Poll::Ready(Ok(accepted))
             }
+            Poll::Ready(Err(error)) => Poll::Ready(Err(error)),
+            Poll::Pending => Poll::Pending,
         }
-
-        if written < encrypted.len() {
-            this.pending.extend_from_slice(&encrypted[written..]);
-            if written == 0 {
-                return Poll::Pending;
-            }
-        }
-        Poll::Ready(Ok(written))
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        let this = self.get_mut();
-        let mut written = 0;
-        while written < this.pending.len() {
-            match Pin::new(&mut this.inner).poll_write(cx, &this.pending[written..]) {
-                Poll::Ready(Ok(0)) => return Poll::Ready(Err(write_zero_err())),
-                Poll::Ready(Ok(n)) => written += n,
-                Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
-                Poll::Pending => {
-                    this.pending.drain(..written);
-                    return Poll::Pending;
-                }
-            }
-        }
-        this.pending.drain(..written);
-        Pin::new(&mut this.inner).poll_flush(cx)
+        Pin::new(&mut self.get_mut().inner).poll_flush(cx)
     }
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         Pin::new(&mut self.get_mut().inner).poll_shutdown(cx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::VecDeque;
+    use std::sync::{Arc, Mutex};
+    use tokio::io::AsyncWriteExt;
+
+    enum Action {
+        Pending,
+        Limit(usize),
+        Error,
+    }
+
+    struct FaultWriter {
+        actions: VecDeque<Action>,
+        bytes: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl AsyncWrite for FaultWriter {
+        fn poll_write(
+            mut self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            data: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            match self.actions.pop_front() {
+                Some(Action::Pending) => {
+                    cx.waker().wake_by_ref();
+                    Poll::Pending
+                }
+                Some(Action::Error) => Poll::Ready(Err(io::Error::other("injected write failure"))),
+                Some(Action::Limit(limit)) => {
+                    let count = limit.min(data.len());
+                    if let Ok(mut bytes) = self.bytes.lock() {
+                        bytes.extend_from_slice(&data[..count]);
+                    }
+                    Poll::Ready(Ok(count))
+                }
+                None => {
+                    if let Ok(mut bytes) = self.bytes.lock() {
+                        bytes.extend_from_slice(data);
+                    }
+                    Poll::Ready(Ok(data.len()))
+                }
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            Poll::Ready(Ok(()))
+        }
+    }
+
+    fn expected(key: &[u8], plaintext: &[u8]) -> Vec<u8> {
+        let mut bytes = plaintext.to_vec();
+        Rc4::new(key).apply_keystream(&mut bytes);
+        bytes
+    }
+
+    #[tokio::test]
+    async fn pending_and_short_writes_preserve_state() -> io::Result<()> {
+        let sink = Arc::new(Mutex::new(Vec::new()));
+        let inner = FaultWriter {
+            actions: VecDeque::from([Action::Pending, Action::Limit(3)]),
+            bytes: sink.clone(),
+        };
+        let key = b"writer-state";
+        let mut writer = Rc4Writer::new(inner, Rc4::new(key));
+        writer.write_all(b"abcdefgh").await?;
+        let actual = sink
+            .lock()
+            .map_err(|_| io::Error::other("poisoned test lock"))?
+            .clone();
+        assert_eq!(actual, expected(key, b"abcdefgh"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn write_error_does_not_advance_state() -> io::Result<()> {
+        let sink = Arc::new(Mutex::new(Vec::new()));
+        let inner = FaultWriter {
+            actions: VecDeque::from([Action::Error]),
+            bytes: sink.clone(),
+        };
+        let key = b"writer-error";
+        let mut writer = Rc4Writer::new(inner, Rc4::new(key));
+        assert!(writer.write(b"discarded").await.is_err());
+        writer.write_all(b"accepted").await?;
+        let actual = sink
+            .lock()
+            .map_err(|_| io::Error::other("poisoned test lock"))?
+            .clone();
+        assert_eq!(actual, expected(key, b"accepted"));
+        Ok(())
     }
 }

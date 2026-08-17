@@ -98,6 +98,37 @@ struct ManagePeerArgs<R, W> {
     have_broadcast: tokio::sync::broadcast::Receiver<ValidPieceIndex>,
 }
 
+async fn connect_with_mse_fallback(
+    connector: &StreamConnector,
+    addr: SocketAddr,
+    info_hash: &[u8; 20],
+    connect_timeout: Duration,
+    rwtimeout: Duration,
+    initial_payload: &[u8; 68],
+) -> anyhow::Result<(
+    crate::mse::BoxedRead,
+    crate::mse::BoxedWrite,
+    Option<anyhow::Error>,
+)> {
+    let (mse_read, mse_write) = with_timeout(connect_timeout, connector.connect(addr))
+        .await
+        .context("error connecting")?;
+    match with_timeout(
+        rwtimeout,
+        crate::mse::outgoing(mse_read, mse_write, info_hash, initial_payload),
+    )
+    .await
+    {
+        Ok((read, write)) => Ok((Box::new(read), Box::new(write), None)),
+        Err(mse_error) => {
+            let (read, write) = with_timeout(connect_timeout, connector.connect(addr))
+                .await
+                .with_context(|| format!("MSE failed ({mse_error:#}); plaintext redial failed"))?;
+            Ok((read, write, Some(mse_error)))
+        }
+    }
+}
+
 impl<H: PeerConnectionHandler> PeerConnection<H> {
     pub fn new(
         addr: SocketAddr,
@@ -137,6 +168,8 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
             .read_write_timeout
             .unwrap_or_else(|| Duration::from_secs(10));
 
+        let remote_supports_extended = handshake.supports_extended();
+
         if handshake.info_hash != self.info_hash.0 {
             anyhow::bail!("wrong info hash");
         }
@@ -151,19 +184,17 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
         );
 
         let mut write_buf = Vec::<u8>::with_capacity(PIECE_MESSAGE_DEFAULT_LEN);
-        let handshake = Handshake::new(self.info_hash, self.peer_id);
-        handshake.serialize(&mut write_buf);
+        let local_handshake = Handshake::new(self.info_hash, self.peer_id);
+        local_handshake.serialize(&mut write_buf);
         with_timeout(rwtimeout, write.write_all(&write_buf))
             .await
             .context("error writing handshake")?;
         write_buf.clear();
 
-        let handshake_supports_extended = handshake.supports_extended();
-
         self.handler.on_handshake(handshake)?;
 
         self.manage_peer(ManagePeerArgs {
-            handshake_supports_extended,
+            handshake_supports_extended: remote_supports_extended,
             read_buf,
             write_buf,
             read,
@@ -191,48 +222,51 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
             .unwrap_or_else(|| Duration::from_secs(10));
 
         let now = Instant::now();
-        let (read, write) =
-            with_timeout(connect_timeout, self.connector.connect(self.addr))
-                .await
-                .context("error connecting")?;
-        self.handler.on_connected(now.elapsed());
-
-        // Negotiate MSE (protocol encryption) before the BT handshake. Peers
-        // that don't speak MSE are detected by their plaintext handshake and
-        // handled unchanged.
-        let (mut read, mut write, plaintext_prefix) =
-            match crate::mse::outgoing(read, write, &self.info_hash.0).await {
-                Ok(crate::mse::Outcome::Encrypted { read, write }) => (read, write, None),
-                Ok(crate::mse::Outcome::Plaintext {
-                    read,
-                    write,
-                    prefix,
-                }) => (read, write, Some(prefix)),
-                Err(e) => return Err(e.context("MSE handshake failed")),
-            };
 
         let mut write_buf = Vec::<u8>::with_capacity(PIECE_MESSAGE_DEFAULT_LEN);
-        let handshake = Handshake::new(self.info_hash, self.peer_id);
-        handshake.serialize(&mut write_buf);
-        with_timeout(rwtimeout, write.write_all(&write_buf))
-            .await
-            .context("error writing handshake")?;
+        let local_handshake = Handshake::new(self.info_hash, self.peer_id);
+        local_handshake.serialize(&mut write_buf);
+        let initial_payload: [u8; 68] = write_buf
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("serialized BT handshake has invalid length"))?;
+
+        let (mut read, mut write, mse_error) = connect_with_mse_fallback(
+            &self.connector,
+            self.addr,
+            &self.info_hash.0,
+            connect_timeout,
+            rwtimeout,
+            &initial_payload,
+        )
+        .await?;
+        self.handler.on_connected(now.elapsed());
+
+        if mse_error.is_some() {
+            with_timeout(rwtimeout, write.write_all(&write_buf))
+                .await
+                .with_context(|| {
+                    let mse_error = mse_error
+                        .as_ref()
+                        .map(|error| format!("{error:#}"))
+                        .unwrap_or_else(|| "unknown MSE error".to_owned());
+                    format!("MSE failed ({mse_error}); plaintext handshake write failed")
+                })?;
+        }
         write_buf.clear();
 
         let mut read_buf = ReadBuf::new();
-        let h = match plaintext_prefix {
-            Some(prefix) => {
-                let (h, _size) = Handshake::deserialize(&prefix).map_err(|e| {
-                    anyhow::anyhow!("error deserializing plaintext handshake: {e:?}")
-                })?;
-                h.clone_to_owned(None)
-            }
-            None => read_buf
-                .read_handshake(&mut read, rwtimeout)
-                .await
-                .context("error reading handshake")?
-                .clone_to_owned(None),
-        };
+        let h = read_buf
+            .read_handshake(&mut read, rwtimeout)
+            .await
+            .with_context(|| {
+                if let Some(error) = &mse_error {
+                    format!("MSE failed ({error:#}); plaintext handshake read failed")
+                } else {
+                    "error reading encrypted handshake".to_owned()
+                }
+            })?
+            .clone_to_owned(None);
         let handshake_supports_extended = h.supports_extended();
         trace!(
             peer_id=?Id20::new(h.peer_id),
@@ -297,9 +331,7 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
                 .update_my_extended_handshake(&mut my_extended)?;
             let my_extended = Message::Extended(ExtendedMessage::Handshake(my_extended));
             trace!("sending extended handshake: {:?}", &my_extended);
-            my_extended
-                .serialize(&mut write_buf, &Default::default)
-                .unwrap();
+            my_extended.serialize(&mut write_buf, &Default::default)?;
             with_timeout(rwtimeout, write.write_all(&write_buf))
                 .await
                 .context("error writing extended handshake")?;
@@ -468,5 +500,52 @@ impl<H: PeerConnectionHandler> PeerConnection<H> {
                 r
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod mse_fallback_tests {
+    use super::*;
+    use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
+
+    #[tokio::test]
+    async fn fresh_redial_fallback_uses_a_new_stream() -> anyhow::Result<()> {
+        let (first_client, mut first_peer) = duplex(4096);
+        let (second_client, mut second_peer) = duplex(4096);
+        let (first_read, first_write) = tokio::io::split(first_client);
+        let (second_read, second_write) = tokio::io::split(second_client);
+        let connector = StreamConnector::with_test_connections(vec![
+            (Box::new(first_read), Box::new(first_write)),
+            (Box::new(second_read), Box::new(second_write)),
+        ]);
+        let initial = [0x5au8; 68];
+        let peer = async move {
+            let mut first_attempt = [0u8; 96];
+            first_peer.read_exact(&mut first_attempt).await?;
+            drop(first_peer);
+            let mut plaintext = [0u8; 68];
+            second_peer.read_exact(&mut plaintext).await?;
+            assert_eq!(plaintext, initial);
+            Ok::<_, std::io::Error>(())
+        };
+        let client = async {
+            let (_read, mut write, error) = connect_with_mse_fallback(
+                &connector,
+                "127.0.0.1:1".parse()?,
+                &[0x42; 20],
+                Duration::from_secs(1),
+                Duration::from_secs(1),
+                &initial,
+            )
+            .await?;
+            assert!(error.is_some());
+            write.write_all(&initial).await?;
+            assert_eq!(connector.remaining_test_connections()?, 0);
+            Ok::<_, anyhow::Error>(())
+        };
+        let (client_result, peer_result) = tokio::join!(client, peer);
+        client_result?;
+        peer_result?;
+        Ok(())
     }
 }

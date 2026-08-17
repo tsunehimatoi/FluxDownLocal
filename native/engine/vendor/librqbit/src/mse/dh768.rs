@@ -1,26 +1,13 @@
 //! 768-bit Diffie-Hellman key exchange for BitTorrent MSE.
 //!
-//! Self-contained big-integer arithmetic (no `crypto-bigint` / `num-bigint`
-//! dependency): limbs are `[u64; 12]` little-endian, with a naive
-//! square-and-multiply modular exponentiation. Performance is irrelevant here
-//! — one key exchange runs per peer connection, not per piece.
-//!
-//! The 768-bit prime is the fixed MSE prime (Azureus protocol-encryption
-//! spec). Note this is **not** RFC 2409 group 1 — it has a modified tail.
+//! This module uses fixed-size, little-endian limbs and has no big-integer
+//! dependency. The private exponent is 160 bits, matching common MSE peers.
 
 use rand::RngCore;
 
-/// 768-bit unsigned integer, little-endian limbs (`limbs[0]` is least
-/// significant).
 type U768 = [u64; 12];
-
-/// 1536-bit unsigned integer (product of two 768-bit values).
 type U1536 = [u64; 24];
 
-/// The 768-bit MSE prime, little-endian limbs. Big-endian hex equivalent:
-/// `FFFFFFFFFFFFFFFF C90FDAA22168C234 C4C6628B80DC1CD1 29024E088A67CC74`
-/// `020BBEA63B139B22 514A08798E3404DD EF9519B3CD3A431B 302B0A6DF25F1437`
-/// `4FE1356D6D51C245 E485B576625E7EC6 F44C42E9A63A3621 0000000000090563`
 const DH_PRIME: U768 = [
     0x0000000000090563,
     0xF44C42E9A63A3621,
@@ -37,18 +24,17 @@ const DH_PRIME: U768 = [
 ];
 
 const ONE: U768 = {
-    let mut one = [0u64; 12];
-    one[0] = 1;
-    one
+    let mut value = [0u64; 12];
+    value[0] = 1;
+    value
 };
 
 const TWO: U768 = {
-    let mut two = [0u64; 12];
-    two[0] = 2;
-    two
+    let mut value = [0u64; 12];
+    value[0] = 2;
+    value
 };
 
-/// Convert a 96-byte big-endian buffer into little-endian limbs.
 fn bytes_be_to_limbs(bytes: &[u8; 96]) -> U768 {
     let mut limbs = [0u64; 12];
     for (i, limb) in limbs.iter_mut().enumerate() {
@@ -60,18 +46,15 @@ fn bytes_be_to_limbs(bytes: &[u8; 96]) -> U768 {
     limbs
 }
 
-/// Convert little-endian limbs into a 96-byte big-endian buffer.
 fn limbs_to_bytes_be(limbs: &U768) -> [u8; 96] {
     let mut bytes = [0u8; 96];
     for (i, limb) in limbs.iter().enumerate() {
-        let be = limb.to_be_bytes();
         let start = 96 - 8 * (i + 1);
-        bytes[start..start + 8].copy_from_slice(&be);
+        bytes[start..start + 8].copy_from_slice(&limb.to_be_bytes());
     }
     bytes
 }
 
-/// `a >= b`.
 fn ge(a: &U768, b: &U768) -> bool {
     for i in (0..12).rev() {
         if a[i] != b[i] {
@@ -81,195 +64,180 @@ fn ge(a: &U768, b: &U768) -> bool {
     true
 }
 
-/// `a - b`, returning `(difference, borrow)`. Caller must guarantee `a >= b`.
 fn sub(a: &U768, b: &U768) -> (U768, bool) {
     let mut diff = [0u64; 12];
-    let mut borrow = 0u64;
+    let mut borrow = false;
     for i in 0..12 {
-        let (d1, b1) = a[i].overflowing_sub(b[i]);
-        let (d2, b2) = d1.overflowing_sub(borrow);
-        diff[i] = d2;
-        borrow = (b1 as u64) + (b2 as u64);
+        let (first, borrow_first) = a[i].overflowing_sub(b[i]);
+        let (second, borrow_second) = first.overflowing_sub(u64::from(borrow));
+        diff[i] = second;
+        borrow = borrow_first || borrow_second;
     }
-    (diff, borrow != 0)
+    (diff, borrow)
 }
 
-/// Schoolbook multiplication `a * b` into a 1536-bit result.
 fn mul(a: &U768, b: &U768) -> U1536 {
     let mut out = [0u64; 24];
-    for i in 0..12 {
+    for (i, &a_limb) in a.iter().enumerate() {
         let mut carry = 0u128;
-        for j in 0..12 {
-            let idx = i + j;
-            let cur = out[idx] as u128 + (a[i] as u128) * (b[j] as u128) + carry;
-            out[idx] = cur as u64;
-            carry = cur >> 64;
+        for (j, &b_limb) in b.iter().enumerate() {
+            let index = i + j;
+            let value = u128::from(out[index]) + u128::from(a_limb) * u128::from(b_limb) + carry;
+            out[index] = u64::try_from(value & u128::from(u64::MAX)).unwrap_or_default();
+            carry = value >> 64;
         }
-        // Propagate the remaining carry into higher limbs (accumulating, since
-        // `out[i+12]` may already hold a value from an earlier `i`).
-        let mut k = i + 12;
-        while carry > 0 && k < 24 {
-            let cur = out[k] as u128 + carry;
-            out[k] = cur as u64;
-            carry = cur >> 64;
-            k += 1;
+        let mut index = i + 12;
+        while carry != 0 && index < out.len() {
+            let value = u128::from(out[index]) + carry;
+            out[index] = u64::try_from(value & u128::from(u64::MAX)).unwrap_or_default();
+            carry = value >> 64;
+            index += 1;
         }
     }
     out
 }
 
-/// Binary long division: reduce a 1536-bit value modulo a 768-bit modulus.
-fn mod_reduce(x: &U1536, m: &U768) -> U768 {
-    let mut rem = [0u64; 12];
-    // `hi` holds the (at most one) carry-out bit when `rem << 1` overflows
-    // 768 bits. The invariant `rem < m` after each step guarantees `hi` is
-    // either 0 or 1.
-    let mut hi: u64 = 0;
+/// Reduce a 1536-bit value while retaining the carry bit of the 769-bit
+/// intermediate remainder. When the low-limb subtraction borrows, that borrow
+/// is paid by the retained high bit instead of being treated as an error.
+fn mod_reduce(value: &U1536, modulus: &U768) -> U768 {
+    let mut remainder = [0u64; 12];
+    let mut high = false;
 
     for bit in (0..1536).rev() {
-        // rem = rem << 1, preserving the overflow bit.
-        let new_hi = rem[11] >> 63;
+        debug_assert!(!high);
+        high = remainder[11] >> 63 != 0;
         let mut carry = 0u64;
-        for limb in rem.iter_mut() {
-            let nc = *limb >> 63;
+        for limb in &mut remainder {
+            let next_carry = *limb >> 63;
             *limb = (*limb << 1) | carry;
-            carry = nc;
+            carry = next_carry;
         }
-        hi = new_hi;
+        remainder[0] |= (value[bit / 64] >> (bit % 64)) & 1;
 
-        // rem |= bit `bit` of x.
-        if (x[bit / 64] >> (bit % 64)) & 1 == 1 {
-            rem[0] |= 1;
+        if high || ge(&remainder, modulus) {
+            let (difference, borrow) = sub(&remainder, modulus);
+            remainder = difference;
+            if high {
+                high = !borrow;
+            } else {
+                debug_assert!(!borrow);
+            }
         }
-
-        // if (hi:rem) >= m, subtract m. `hi != 0` implies (hi:rem) >= 2^768 > m.
-        if hi != 0 || ge(&rem, m) {
-            let (d, borrow) = sub(&rem, m);
-            debug_assert!(!borrow);
-            rem = d;
-            hi = 0;
-        }
+        debug_assert!(!high);
     }
 
-    debug_assert_eq!(hi, 0);
-    rem
+    remainder
 }
 
-/// Modular exponentiation `base^exp mod m`, exponent given as 20 big-endian
-/// bytes (160-bit, matching libtorrent's DH private key size).
-fn powm(base: &U768, exp: &[u8; 20], m: &U768) -> U768 {
+fn powm(base: &U768, exponent: &[u8; 20], modulus: &U768) -> U768 {
     let mut result = ONE;
-    for byte in exp.iter() {
+    for byte in exponent {
         for bit in (0..8).rev() {
-            result = mod_reduce(&mul(&result, &result), m);
-            if (byte >> bit) & 1 == 1 {
-                result = mod_reduce(&mul(&result, base), m);
+            result = mod_reduce(&mul(&result, &result), modulus);
+            if (byte >> bit) & 1 != 0 {
+                result = mod_reduce(&mul(&result, base), modulus);
             }
         }
     }
     result
 }
 
-/// A 768-bit Diffie-Hellman key pair for MSE.
 pub struct Dh768 {
-    /// 160-bit private exponent, big-endian (libtorrent uses 20 random bytes).
     secret: [u8; 20],
-    /// `2^secret mod prime`.
     public: U768,
 }
 
 impl Dh768 {
-    /// Generate a fresh key pair. `rng` is injectable for deterministic tests.
     pub fn generate(rng: &mut impl RngCore) -> Self {
         let mut secret = [0u8; 20];
-        rng.fill_bytes(&mut secret);
-        let public = powm(&TWO, &secret, &DH_PRIME);
-        Dh768 { secret, public }
+        while secret.iter().all(|byte| *byte == 0) {
+            rng.fill_bytes(&mut secret);
+        }
+        Self::from_secret(secret)
     }
 
-    /// The 96-byte big-endian public key as sent on the wire.
+    pub(super) fn from_secret(secret: [u8; 20]) -> Self {
+        let public = powm(&TWO, &secret, &DH_PRIME);
+        Self { secret, public }
+    }
+
     pub fn public_key_bytes(&self) -> [u8; 96] {
         limbs_to_bytes_be(&self.public)
     }
 
-    /// Compute the shared secret from the peer's 96-byte public key.
-    ///
-    /// Returns `None` for a degenerate remote key (outside `[2, p-2]`), which
-    /// would otherwise produce a small-subgroup shared secret and defeat the
-    /// key exchange.
     pub fn shared_secret(&self, remote: &[u8; 96]) -> Option<[u8; 96]> {
-        let remote_limbs = bytes_be_to_limbs(remote);
-        if !ge(&remote_limbs, &TWO) {
+        let remote = bytes_be_to_limbs(remote);
+        if !ge(&remote, &TWO) {
             return None;
         }
         let prime_minus_one = sub(&DH_PRIME, &ONE).0;
-        if ge(&remote_limbs, &prime_minus_one) {
+        if ge(&remote, &prime_minus_one) {
             return None;
         }
-        let shared = powm(&remote_limbs, &self.secret, &DH_PRIME);
-        Some(limbs_to_bytes_be(&shared))
+        Some(limbs_to_bytes_be(&powm(&remote, &self.secret, &DH_PRIME)))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
+    use anyhow::{Context, Result};
     use rand::rngs::SmallRng;
+    use rand::SeedableRng;
 
-    #[test]
-    fn shared_secret_agrees_between_parties() {
-        let mut rng = SmallRng::seed_from_u64(0x5eed);
-        let a = Dh768::generate(&mut rng);
-        let b = Dh768::generate(&mut rng);
-
-        let sa = a.shared_secret(&b.public_key_bytes()).unwrap();
-        let sb = b.shared_secret(&a.public_key_bytes()).unwrap();
-        assert_eq!(sa, sb);
+    fn decode<const N: usize>(text: &str) -> Result<[u8; N]> {
+        let bytes = hex::decode(text).context("invalid test vector hex")?;
+        bytes
+            .try_into()
+            .map_err(|_| anyhow::anyhow!("test vector has the wrong length"))
     }
 
     #[test]
-    fn public_key_is_96_bytes_and_nonzero() {
-        let mut rng = SmallRng::seed_from_u64(7);
+    fn matches_external_bigint_vectors() -> Result<()> {
+        let secret_a = decode::<20>("000102030405060708090a0b0c0d0e0f10111213")?;
+        let public_a = decode::<96>("7fba71c678158bd55ef1cc04a919d1b05f79f9da403c67e82bb1a99a7b4bc4ec221cca6c3a78171a40f2cc12e3d9d4454338f7e4b9b33de5e82ab04e86f5cd43aaf9dad923988501c371d3159935de5499e5d726e740b1eabbf4a3dd03c68071")?;
+        let secret_b = decode::<20>("f0e0d0c0b0a09080706050403020100011223344")?;
+        let public_b = decode::<96>("f9fe7e1c27aee331ab8ff8a6183cfcc7bd08dc593fc4d52bc9a2694b7b787daa12e3b2695e3e9febf994447cefa427f9f5da34a4d3cd6c231a8d6517e7130de00a8a09e753ca12648ec18da389e68eeb66f8308b19cc60dfeaadb2540a821f53")?;
+        let shared = decode::<96>("909ea4557d5b9f43dafdc5b598850045b8689e4d652af58a63730b00c574bbe4962ab9c78b2f295e3ddb3b456f20a4c65761751bf5d79ec4dba8470fe66ed22b4a25f13528a9575607c77586785a36d560f8556b66e9c16deb87fed185ee07a7")?;
+
+        let a = Dh768::from_secret(secret_a);
+        let b = Dh768::from_secret(secret_b);
+        assert_eq!(a.public_key_bytes(), public_a);
+        assert_eq!(b.public_key_bytes(), public_b);
+        assert_eq!(a.shared_secret(&public_b), Some(shared));
+        assert_eq!(b.shared_secret(&public_a), Some(shared));
+        Ok(())
+    }
+
+    #[test]
+    fn generated_secret_is_nonzero() {
+        let mut rng = SmallRng::seed_from_u64(0x5eed);
         let dh = Dh768::generate(&mut rng);
-        let pk = dh.public_key_bytes();
-        assert_eq!(pk.len(), 96);
-        assert!(pk.iter().any(|&b| b != 0));
+        assert!(dh.secret.iter().any(|byte| *byte != 0));
     }
 
     #[test]
     fn rejects_degenerate_remote_keys() {
-        let mut rng = SmallRng::seed_from_u64(11);
-        let dh = Dh768::generate(&mut rng);
-
-        // All-zero and all-0xff public keys are outside [2, p-2].
+        let dh = Dh768::from_secret([1u8; 20]);
         assert!(dh.shared_secret(&[0u8; 96]).is_none());
         assert!(dh.shared_secret(&[0xffu8; 96]).is_none());
-        // g^0 = 1, also degenerate.
         let mut one = [0u8; 96];
         one[95] = 1;
         assert!(dh.shared_secret(&one).is_none());
     }
 
     #[test]
-    fn mod_reduce_matches_known_value() {
-        // (p + 1) mod p == 1.
-        let mut y = [0u64; 24];
-        y[..12].copy_from_slice(&DH_PRIME);
-        y[0] = y[0].wrapping_add(1);
-        assert_eq!(mod_reduce(&y, &DH_PRIME), ONE);
-
-        // (2p) mod p == 0.
-        let mut z = [0u64; 24];
-        z[..12].copy_from_slice(&DH_PRIME);
-        // z = p << 1.
+    fn reduction_handles_769_bit_borrow() {
+        let mut twice_prime = [0u64; 24];
+        twice_prime[..12].copy_from_slice(&DH_PRIME);
         let mut carry = 0u64;
-        for i in 0..12 {
-            let nc = z[i] >> 63;
-            z[i] = (z[i] << 1) | carry;
-            carry = nc;
+        for limb in &mut twice_prime[..12] {
+            let next = *limb >> 63;
+            *limb = (*limb << 1) | carry;
+            carry = next;
         }
-        z[12] = carry;
-        assert_eq!(mod_reduce(&z, &DH_PRIME), [0u64; 12]);
+        twice_prime[12] = carry;
+        assert_eq!(mod_reduce(&twice_prime, &DH_PRIME), [0u64; 12]);
     }
 }

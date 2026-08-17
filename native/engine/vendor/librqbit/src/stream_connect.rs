@@ -55,18 +55,51 @@ impl SocksProxyConfig {
     }
 }
 
-#[derive(Debug, Default)]
+#[cfg(test)]
+type TestConnection = (
+    Box<dyn tokio::io::AsyncRead + Send + Unpin>,
+    Box<dyn tokio::io::AsyncWrite + Send + Unpin>,
+);
+
+#[derive(Default)]
 pub(crate) struct StreamConnector {
     proxy_config: Option<SocksProxyConfig>,
+    #[cfg(test)]
+    test_connections: std::sync::Mutex<std::collections::VecDeque<TestConnection>>,
 }
 
 impl From<Option<SocksProxyConfig>> for StreamConnector {
     fn from(proxy_config: Option<SocksProxyConfig>) -> Self {
-        Self { proxy_config }
+        Self {
+            proxy_config,
+            #[cfg(test)]
+            test_connections: Default::default(),
+        }
     }
 }
 
 impl StreamConnector {
+    #[cfg(test)]
+    pub fn with_test_connections(
+        connections: Vec<(
+            Box<dyn tokio::io::AsyncRead + Send + Unpin>,
+            Box<dyn tokio::io::AsyncWrite + Send + Unpin>,
+        )>,
+    ) -> Self {
+        Self {
+            proxy_config: None,
+            test_connections: std::sync::Mutex::new(connections.into()),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn remaining_test_connections(&self) -> anyhow::Result<usize> {
+        self.test_connections
+            .lock()
+            .map(|connections| connections.len())
+            .map_err(|_| anyhow::anyhow!("test connector lock poisoned"))
+    }
+
     pub async fn connect(
         &self,
         addr: SocketAddr,
@@ -74,6 +107,18 @@ impl StreamConnector {
         Box<dyn tokio::io::AsyncRead + Send + Unpin>,
         Box<dyn tokio::io::AsyncWrite + Send + Unpin>,
     )> {
+        #[cfg(test)]
+        {
+            let connection = self
+                .test_connections
+                .lock()
+                .map_err(|_| anyhow::anyhow!("test connector lock poisoned"))?
+                .pop_front();
+            if let Some(connection) = connection {
+                return Ok(connection);
+            }
+        }
+
         if let Some(proxy) = self.proxy_config.as_ref() {
             let (r, w) = proxy.connect(addr).await?;
             return Ok((Box::new(r), Box::new(w)));

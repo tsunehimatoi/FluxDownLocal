@@ -499,6 +499,14 @@ impl NodePool {
                         slot.ewma_bps = (1.0 - EWMA_ALPHA) * slot.ewma_bps + EWMA_ALPHA * rate;
                         if let (Some(ip), Some(db)) = (slot.ip, self.db.as_ref()) {
                             super::health::record_ewma(&self.host, ip, slot.ewma_bps, db);
+                            // P2 遥测：段吞吐样本（仅钉定节点——SYS 无法归因 IP）。
+                            super::telemetry::record_segment(
+                                &self.host,
+                                ip,
+                                Some(rate as u64),
+                                true,
+                                db,
+                            );
                         }
                     }
                 }
@@ -511,6 +519,8 @@ impl NodePool {
                         ip.is_some() && (immediate || slot.fail_streak >= KICK_STREAK);
                     if let (Some(ip), Some(db)) = (ip, self.db.as_ref()) {
                         super::health::record_ewma(&self.host, ip, slot.ewma_bps, db);
+                        // P2 遥测：节点失败样本。
+                        super::telemetry::record_segment(&self.host, ip, None, false, db);
                     }
                     if should_kick {
                         slot.kicked = true;

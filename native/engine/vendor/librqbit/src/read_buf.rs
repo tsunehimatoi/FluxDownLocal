@@ -19,9 +19,16 @@ pub struct ReadBuf {
 
 impl ReadBuf {
     pub fn new() -> Self {
+        Self::with_prefix(&[])
+    }
+
+    pub fn with_prefix(prefix: &[u8]) -> Self {
+        let length = (PIECE_MESSAGE_DEFAULT_LEN * 2).max(prefix.len());
+        let mut buf = vec![0; length];
+        buf[..prefix.len()].copy_from_slice(prefix);
         Self {
-            buf: vec![0; PIECE_MESSAGE_DEFAULT_LEN * 2],
-            filled: 0,
+            buf,
+            filled: prefix.len(),
             processed: 0,
         }
     }
@@ -50,21 +57,23 @@ impl ReadBuf {
         mut conn: impl AsyncReadExt + Unpin,
         timeout: Duration,
     ) -> anyhow::Result<Handshake<ByteBuf<'_>>> {
-        self.filled = with_timeout(timeout, conn.read(&mut self.buf))
-            .await
-            .context("error reading handshake")?;
-        if self.filled == 0 {
-            anyhow::bail!("peer disconnected while reading handshake");
+        loop {
+            if self.filled >= 68 {
+                let (handshake, size) = Handshake::deserialize(&self.buf[..self.filled])
+                    .map_err(|error| anyhow::anyhow!("error deserializing handshake: {error:?}"))?;
+                self.processed = size;
+                return Ok(handshake);
+            }
+            self.prepare_for_read(68 - self.filled);
+
+            let size = with_timeout(timeout, conn.read(&mut self.buf[self.filled..]))
+                .await
+                .context("error reading handshake")?;
+            if size == 0 {
+                anyhow::bail!("peer disconnected while reading handshake");
+            }
+            self.filled += size;
         }
-        let (h, size) = Handshake::deserialize(&self.buf[..self.filled]).map_err(|e| {
-            anyhow::anyhow!(
-                "error deserializing handshake: {:?} hadshake data {:?}",
-                e,
-                &self.buf[..self.filled.min(19)]
-            )
-        })?;
-        self.processed = size;
-        Ok(h)
     }
 
     // Read a message into the buffer, try to deserialize it and call the callback on it.

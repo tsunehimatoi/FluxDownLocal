@@ -23,8 +23,12 @@ use crate::db::Db;
 use super::manager::PluginManager;
 use super::runtime::PluginError;
 
-/// 不内置 FluxDown 官方索引；需要市场时由用户显式配置第三方或自托管索引。
-pub const DEFAULT_INDEX_SOURCES: &[&str] = &[];
+/// 内置官方索引候选源（不同法域/托管，共享同一 index_id；任一存活即可用）。
+/// 首个成功者胜出；用户可经配置覆盖/追加。
+pub const DEFAULT_INDEX_SOURCES: &[&str] = &[
+    "https://raw.githubusercontent.com/zerx-lab/fluxdown-plugin-index/main/index.json",
+    "https://cdn.jsdelivr.net/gh/zerx-lab/fluxdown-plugin-index@main/index.json",
+];
 
 /// 下载/校验/安装的错误。
 #[derive(Debug, thiserror::Error)]

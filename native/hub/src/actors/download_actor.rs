@@ -3,14 +3,14 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use fluxdown_engine::bt_downloader::BtConfig;
-use fluxdown_engine::db::Db;
+use fluxdown_engine::db::{Db, DbError};
 use fluxdown_engine::download_manager::{
     self, CreateGroupSpec, GroupItemSpec, NewTaskSpec, ResolvePreviewOutcome, TaskDone,
 };
 use fluxdown_engine::events::EventSink;
 use fluxdown_engine::proxy_config::ProxyConfig;
 use fluxdown_engine::selection::HostSelection;
-use fluxdown_engine::{Engine, EngineConfig};
+use fluxdown_engine::{Engine, EngineConfig, EngineError};
 use rinf::{DartSignal, RustSignal};
 use tokio::sync::{broadcast, mpsc};
 
@@ -44,6 +44,13 @@ use crate::signals::{
     WebhookDeliveries, WebhookPresets, WebhookSimulateAck, WebhookTestResult, YtdlpInstallProgress,
     YtdlpInstallResult, YtdlpStatusReport, YtdlpVersionList,
 };
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ActorError {
+    #[error("failed to open download database")]
+    OpenDatabase(#[source] DbError),
+    #[error("failed to initialize download engine")]
+    InitializeEngine(#[source] EngineError),
+}
 use fluxdown_api::server::{ApiServerConfig, ApiServerHandle, spawn_api_server};
 use fluxdown_api::service::TaskEvent;
 
@@ -326,14 +333,8 @@ async fn load_initial_config(
     )
 }
 
-pub async fn run(db_dir: PathBuf) {
-    let db = match Db::open(&db_dir).await {
-        Ok(db) => db,
-        Err(e) => {
-            log_info!("Failed to open database: {}", e);
-            return;
-        }
-    };
+pub async fn run(db_dir: PathBuf) -> Result<(), ActorError> {
+    let db = Db::open(&db_dir).await.map_err(ActorError::OpenDatabase)?;
 
     // Initialize default config values in DB (no-op if already set)
     if let Err(e) = db.init_default_config(&default_save_dir()).await {
@@ -410,7 +411,7 @@ pub async fn run(db_dir: PathBuf) {
     let sink: Arc<dyn EventSink> = rinf_sink.clone();
     let selector: Arc<dyn HostSelection> = Arc::new(RinfHostSelection::new());
 
-    let mut engine = match Engine::new(
+    let mut engine = Engine::new(
         EngineConfig {
             max_concurrent,
             speed_limit_bps,
@@ -431,13 +432,7 @@ pub async fn run(db_dir: PathBuf) {
         selector.clone(),
     )
     .await
-    {
-        Ok(e) => e,
-        Err(e) => {
-            log_info!("Failed to create engine: {}", e);
-            return;
-        }
-    };
+    .map_err(ActorError::InitializeEngine)?;
 
     engine.manager.set_default_segments(default_segments);
     engine

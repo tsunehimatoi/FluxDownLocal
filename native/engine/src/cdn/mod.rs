@@ -22,8 +22,10 @@
 //! 纯增益层，没有新的全局失败模式（不变量 1）。
 
 pub mod health;
+pub mod hints;
 pub mod node_pool;
 pub mod resolver;
+pub mod telemetry;
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -88,7 +90,7 @@ fn auto_max_nodes(total_bytes: i64, segment_cap: i32) -> usize {
 /// 后台聚合任务的产出：预筛存活节点 + 归因/诊断信息（喂 `TaskCdnEvent`）。
 #[derive(Default)]
 pub struct AggregationOutcome {
-    /// connect 预筛存活的候选（按本地解析顺序、截断硬上限）。
+    /// connect 预筛存活的候选（按 hints 重排序、截断硬上限）。
     alive: Vec<IpAddr>,
     /// 每个候选 IP 的解析来源（`resolver::CandidateSet::origins`）。
     origins: std::collections::HashMap<IpAddr, String>,
@@ -143,10 +145,10 @@ fn aggregation_gates_open(
     Some((host, port))
 }
 
-/// TCP connect 预筛：并发探测候选，保序返回存活者。死 IP（连不通/超时）
-/// 被剔除；本机无 v6 路由时
+/// TCP connect 预筛：并发探测候选，保序返回存活者，并采遥测样本
+/// （连接耗时/死活，P2）。死 IP（连不通/超时）被剔除；本机无 v6 路由时
 /// AAAA 候选在此天然过滤。
-async fn probe_alive(ips: Vec<IpAddr>, port: u16) -> Vec<IpAddr> {
+async fn probe_alive(host: &str, ips: Vec<IpAddr>, port: u16, db: &Db) -> Vec<IpAddr> {
     let futs = ips.into_iter().map(|ip| async move {
         let started = std::time::Instant::now();
         let connect = tokio::net::TcpStream::connect(SocketAddr::new(ip, port));
@@ -158,7 +160,8 @@ async fn probe_alive(ips: Vec<IpAddr>, port: u16) -> Vec<IpAddr> {
     });
     let results = futures_util::future::join_all(futs).await;
     let mut alive = Vec::new();
-    for (ip, ok, _connect_ms) in results {
+    for (ip, ok, connect_ms) in results {
+        telemetry::record_connect(host, ip, connect_ms, ok, db);
         if ok {
             alive.push(ip);
         }
@@ -166,31 +169,38 @@ async fn probe_alive(ips: Vec<IpAddr>, port: u16) -> Vec<IpAddr> {
     alive
 }
 
-/// 任务起飞时发起候选聚合（本地解析 + connect 预筛），与 meta
+/// 任务起飞时发起候选聚合（解析 + hints 先验 + connect 预筛），与 meta
 /// probe 并行。静态门控不通过 → `None`（调用方最终走 [`NodePool::single`]）。
 pub fn spawn_aggregation(
     url: &str,
     input: &CdnTaskInput,
     range_verified: bool,
     task_id: &str,
-    _db: &Db,
+    db: &Db,
 ) -> Option<PendingAggregation> {
     let (host, port) = aggregation_gates_open(url, input, range_verified)?;
-    // 此处只按硬上限截断；有效上限（本地/自动）在 finish_pool
+    // 此处只按硬上限截断；有效上限（本地/自动/云端合并）在 finish_pool
     // 里裁剪——自动档需要 probe 后才知道的 total_bytes。
     let max_nodes = MAX_NODES_LIMIT;
     let task_id = task_id.to_string();
     let spawn_host = host.clone();
+    let db = db.clone();
     let handle = tokio::spawn(async move {
-        let set = resolver::resolve_candidates(&spawn_host, port).await;
+        // 多来源解析与云端 hints（P2 排序先验）并发拉取。
+        let (set, hint_ips) = futures_util::join!(
+            resolver::resolve_candidates(&spawn_host, port),
+            hints::fetch_hints(&spawn_host)
+        );
         if set.ips.len() < 2 {
             return AggregationOutcome {
                 candidates: set.ips.len(),
                 ..Default::default()
             };
         }
+        // hints 只重排（热门节点优先被预筛/早期租约探索），绝不增删候选。
         let candidates = set.ips.len();
-        let alive = probe_alive(set.ips, port).await;
+        let ordered = hints::order_by_hints(set.ips, &hint_ips);
+        let alive = probe_alive(&spawn_host, ordered, port, &db).await;
         log_info!(
             "[cdn] task {} host {} 候选预筛: {} 存活，取前 {}",
             task_id,
@@ -425,13 +435,17 @@ mod tests {
 
     #[tokio::test]
     async fn probe_alive_filters_dead_candidates() {
-        // 活端口：本地 127.0.0.1 listener；死 IP：127.0.0.2（回环但无 listener，
-        // 避开 TUN 驱动对非回环公网段的全局拦截，立即拒绝连接）。
+        // 活端口：本地 listener；死端口：TEST-NET-1 保留地址（不可路由，
+        // 依赖 2s 超时剔除）。遥测采样需要 Db：临时目录建库。
+        let dir = std::env::temp_dir().join(format!("fluxdown_cdnprobe_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = crate::db::Db::open(&dir).await.unwrap();
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let alive_ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        let dead_ip = IpAddr::V4(Ipv4Addr::new(127, 0, 0, 2));
-        let survivors = probe_alive(vec![dead_ip, alive_ip], port).await;
+        let dead_ip = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
+        let survivors = probe_alive("probe.example", vec![dead_ip, alive_ip], port, &db).await;
         assert_eq!(survivors, vec![alive_ip]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

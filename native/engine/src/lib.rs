@@ -197,6 +197,13 @@ impl Engine {
         cdn::health::load_cdn_health(&db).await;
         // 读回持久化的 Auto 代理路由先验（换网/过期/旧版本在加载时丢弃）。
         route_health::load(&db).await;
+        // 读回云端下发的 resolver 端点清单（空/非法 → 内置 baseline）。
+        cdn::resolver::load_endpoints_from_config(&db).await;
+        // 读回云端下发的 ECS 探测子网与 hints base（P2；空 = 各自禁用）。
+        cdn::resolver::load_ecs_from_config(&db).await;
+        cdn::hints::load_base_from_config(&db).await;
+        // 遥测：回读上次进程遗留的待上传样本（采样常开）。
+        cdn::telemetry::load_pending(&db).await;
         // 播种内置队列（main 主队列 / later 稍后下载，幂等）并迁移存量
         // 空 queue_id 任务——必须先于宿主的 `manager.load_queues()`。
         db.seed_builtin_queues().await?;
