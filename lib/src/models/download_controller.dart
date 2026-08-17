@@ -740,6 +740,21 @@ class DownloadController extends ChangeNotifier {
     _safeNotifyListeners();
   }
 
+  /// 清空所有本机已完成任务的记录，保留已下载文件。
+  void deleteCompletedTasks() {
+    final ids = _tasks
+        .where((task) => task.status == TaskStatus.completed)
+        .map((task) => task.id)
+        .toList();
+    logInfo(_tag, 'deleteCompletedTasks: ${ids.length} tasks');
+    if (ids.isEmpty) return;
+
+    _checkedTaskIds
+      ..clear()
+      ..addAll(ids);
+    deleteCheckedTasks(deleteFiles: false);
+  }
+
   String? get selectedTaskId => _selectedTaskId;
 
   DownloadTask? get selectedTask {

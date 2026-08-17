@@ -818,11 +818,27 @@ class _TitlebarToolButtons extends StatelessWidget {
     final themeProvider = FluxDownApp.of(context);
     final showPause = settings?.showTitlebarPauseAll ?? true;
     final showResume = settings?.showTitlebarResumeAll ?? true;
+    final showClearCompleted =
+        settings?.showTitlebarClearCompleted ?? true;
     final showSettings = settings?.showTitlebarSettings ?? true;
     final showTheme = settings?.showTitlebarTheme ?? true;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (showClearCompleted)
+          _ToolButton(
+            icon: LucideIcons.trash2,
+            tooltip: s.clearCompletedTasks,
+            onPressed: controller.deleteCompletedTasks,
+            iconSize: 16,
+            onSecondaryTapUp: settings == null
+                ? null
+                : (d) => _showHideMenu(
+                    context,
+                    d.globalPosition,
+                    () => settings.setShowTitlebarClearCompleted(false),
+                  ),
+          ),
         if (showPause)
           _ToolButton(
             icon: LucideIcons.circlePause,
@@ -903,7 +919,7 @@ class _TitlebarOverlayReservation extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = SettingsProvider.globalInstance;
     if (settings == null) {
-      return SizedBox(width: _windowButtonsWidth + _toolButtonWidth * 4);
+      return SizedBox(width: _windowButtonsWidth + _toolButtonWidth * 5);
     }
     return ListenableBuilder(
       listenable: settings,
@@ -911,6 +927,7 @@ class _TitlebarOverlayReservation extends StatelessWidget {
         final visibleTools = [
           settings.showTitlebarPauseAll,
           settings.showTitlebarResumeAll,
+          settings.showTitlebarClearCompleted,
           settings.showTitlebarSettings,
           settings.showTitlebarTheme,
         ].where((v) => v).length;
