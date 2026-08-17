@@ -55,18 +55,18 @@ cargo check -p hub --lib
 
 # 构建 Release 并生成安装包（输出到 dist/ 目录）
 powershell -ExecutionPolicy Bypass -File scripts/build_custom_windows.ps1 `
-  -Version 0.4.6-local.1 `
+  -Version 0.4.7-local.1 `
   -OutputDirectory dist
 
 # 压缩生成免安装绿色便携版
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\FluxDown-0.4.6-local.1-windows-x64-portable.zip -Force
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\FluxDown-0.4.7-local.1-windows-x64-portable.zip -Force
 ```
 
 ### 构建 CLI 命令行工具
 ```powershell
 cargo build --release -p fluxdown_cli
 Copy-Item target\release\fluxdown.exe dist\fluxdown.exe -Force
-Compress-Archive -Path target\release\fluxdown.exe -DestinationPath dist\FluxDown-0.4.6-local.1-windows-x64-cli.zip -Force
+Compress-Archive -Path target\release\fluxdown.exe -DestinationPath dist\FluxDown-0.4.7-local.1-windows-x64-cli.zip -Force
 ```
 
 ### 构建浏览器扩展

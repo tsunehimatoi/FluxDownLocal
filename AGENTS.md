@@ -13,7 +13,8 @@
 | 要查什么 | 读哪个 |
 |---|---|
 | **精简版产品边界：保留/移除项、隐私、浏览器扩展和上游同步准则** | `.omp/knowledge/streamlined-edition.md` |
-| **上游定期同步指导规范（SOP）：人工/AI逐条审查、三类判定、裁剪冲突、台账** | `.omp/knowledge/upstream-sync.md` |
+| **上游定期同步与发版规范（SOP）：生命周期、自动化版本判定、质量门禁** | `.omp/knowledge/upstream-sync.md` |
+| **上游提交全量审计台账：Commit-by-Commit 判定结果（采纳/裁剪/废弃）与详细原因** | `.omp/knowledge/upstream-sync-ledger.md` |
 | 架构全图、顶层目录树（哪个目录管什么） | `.omp/knowledge/README.md` |
 | 状态码 / DB 表与字段语义、6 种协议、引擎子系统（auto_proxy、RSS、segment_coordinator…）、旧插件兼容残留、受管组件 | `.omp/knowledge/engine.md` |
 | HTTP API 路由组与鉴权、hub / cli / nmh、已退役 updater 历史 | `.omp/knowledge/hosts-and-api.md` |
@@ -158,11 +159,17 @@ git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水�
 
 ---
 
-## 6. git · 分支 · 发布
+## 6. git · 分支 · 发布与提交分类
 
 - **git 写操作的门槛是「用户授权」**：用户在本会话要求过（含 `/commit`、「提交」「推一下」「发版」）→ 视为已授权，核对前置条件后**直接做完**，不再征询；用户没要求、你自己想顺手做 → 停手先问。授权按动作粒度计（提交 ≠ 推送，打 tag ≠ 发布）。
 - **分支模型**：`main` = 开发分支（超集 / 最新），`stable` = 稳定分支（子集）。日常一律在 `main`；`stable` 只经合并/cherry-pick `main` 前进；hotfix 直进 `stable` 必须**同回合**同步回 `main`。一致性判据 `git log stable --not main` **恒为空**。
-- **tag**：采用 `v<UpstreamVersion>-local.<N>` 规范（发版前先通过 `git show upstream/main:pubspec.yaml` 查明上游基准版本）。稳定 `vX.Y.Z-local.N` 只从 `stable`，预览 `vX.Y.Z-local.N-rc.M` 只从 `main`；CI 有分支守卫，打错分支整条流水线失败。推送 `v*` tag **立即触发全平台发布，不可逆**。
+- **tag**：采用 `v<UpstreamVersion>-local.<N>` 规范（发版前通过 `.omp/knowledge/upstream-sync.md` §3.5 自动化判定阶梯确定上游基准版本）。稳定 `vX.Y.Z-local.N` 只从 `stable`，预览 `vX.Y.Z-local.N-rc.M` 只从 `main`；CI 有分支守卫，打错分支整条流水线失败。推送 `v*` tag **立即触发全平台发布，不可逆**。
+- **提交分类契约（从现在往后严格执行）**：
+  所有提交一律遵循 Conventional Commits（`feat`/`fix`/`chore`/`docs`/`refactor`/`perf`/`test`），并按来源严格区分：
+  1. **上游直接同步**：`<type>(<scope>): <msg> (upstream <hash>)`（纯引擎/协议直接拣选，保留原意并注 Hash）
+  2. **上游修改后纳入**：`<type>(<scope>): <msg> (adapted from <hash>)`（裁剪云端/多余模块后合入，正文说明裁剪项）
+  3. **上游无关的本地专属提交**：`<type>(local/<scope>): <msg>` 或 `<type>(<scope>): <msg> (local)`
+  - ⚠️ **本地提交冲突保护铁律（Conflict Guard）**：**上游无关的本地专属改动，在后续同步与上游产生冲突时，AI 严禁自行丢弃、回退或覆盖，必须立刻停手请示用户，由用户决策！**
 - 流水线是**组件变更检测**式（`changes` job diff `PREV..TAG` 映射路径→`app`/`extension`/`mobile`/`cli`）；`docs/*`、`*.md` 不触发构建。矩阵细节见 `.omp/knowledge/ops.md`。
 
 ---

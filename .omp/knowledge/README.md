@@ -21,7 +21,8 @@
 |---|---|
 | `README.md`（本文件） | 架构全图、顶层目录树 |
 | `streamlined-edition.md` | 精简版产品边界、保留/移除清单、联网约束与验收标准 |
-| `upstream-sync.md` | 上游定期同步指导规范（SOP）、人工/AI 审查决策矩阵、台账记录 |
+| `upstream-sync.md` | 上游定期同步与发版标准操作规范（SOP）、人工/AI 审查决策矩阵 |
+| `upstream-sync-ledger.md` | 上游提交全量审计台账（历史与增量 Commit 采纳/裁剪/废弃记录） |
 | `engine.md` | 状态与数据模型、DB 表与字段语义、6 协议、引擎子系统、旧插件兼容残留、受管组件 |
 | `hosts-and-api.md` | HTTP API 路由组与鉴权、hub / cli / nmh、已退役 updater 历史 |
 | `clients.md` | Flutter 前端（主题 / widgets / 移动端 / 设置项分类）、扩展、用户脚本 |

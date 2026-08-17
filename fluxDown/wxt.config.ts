@@ -26,8 +26,8 @@ export default defineConfig({
     name: "__MSG_extensionName__",
     description: "__MSG_extensionDescription__",
     default_locale: "en",
-    version: "0.4.6",
-    version_name: "0.4.6-local.1",
+    version: "0.4.7",
+    version_name: "0.4.7-local.1",
     // Stable key to pin Chrome extension ID across all builds (Chrome only).
     // Firefox 通过 browser_specific_settings.gecko.id 固定 ID。
     // Edge 不支持 key 字段（加载时会报错），且 Edge 侧载扩展 ID
