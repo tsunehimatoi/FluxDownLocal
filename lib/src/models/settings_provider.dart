@@ -71,6 +71,7 @@ class SettingsProvider extends ChangeNotifier {
   // 标题栏工具按钮显示设置
   bool _showTitlebarPauseAll = true; // 全部暂停按钮
   bool _showTitlebarResumeAll = true; // 全部恢复按钮
+  bool _showTitlebarClearCompleted = true; // 清除已完成按钮
   bool _showTitlebarSettings = true; // 设置按钮
   bool _showTitlebarTheme = true; // 主题切换按钮
 
@@ -313,6 +314,7 @@ class SettingsProvider extends ChangeNotifier {
   // 标题栏工具按钮 Getters
   bool get showTitlebarPauseAll => _showTitlebarPauseAll;
   bool get showTitlebarResumeAll => _showTitlebarResumeAll;
+  bool get showTitlebarClearCompleted => _showTitlebarClearCompleted;
   bool get showTitlebarSettings => _showTitlebarSettings;
   bool get showTitlebarTheme => _showTitlebarTheme;
 
@@ -818,6 +820,13 @@ class SettingsProvider extends ChangeNotifier {
     _showTitlebarResumeAll = value;
     notifyListeners();
     _saveToRust('show_titlebar_resume_all', value.toString());
+  }
+
+  void setShowTitlebarClearCompleted(bool value) {
+    if (_showTitlebarClearCompleted == value) return;
+    _showTitlebarClearCompleted = value;
+    notifyListeners();
+    _saveToRust('show_titlebar_clear_completed', value.toString());
   }
 
   void setShowTitlebarSettings(bool value) {
@@ -2095,6 +2104,8 @@ class SettingsProvider extends ChangeNotifier {
           _showTitlebarPauseAll = entry.value != 'false';
         case 'show_titlebar_resume_all':
           _showTitlebarResumeAll = entry.value != 'false';
+        case 'show_titlebar_clear_completed':
+          _showTitlebarClearCompleted = entry.value != 'false';
         case 'show_titlebar_settings':
           _showTitlebarSettings = entry.value != 'false';
         case 'show_titlebar_theme':
