@@ -15,6 +15,7 @@
 | **精简版产品边界：保留/移除项、隐私、浏览器扩展和上游同步准则** | `.omp/knowledge/streamlined-edition.md` |
 | **上游定期同步与发版规范（SOP）：生命周期、自动化版本判定、质量门禁** | `.omp/knowledge/upstream-sync.md` |
 | **上游提交全量审计台账：Commit-by-Commit 判定结果（采纳/裁剪/废弃）与详细原因** | `.omp/knowledge/upstream-sync-ledger.md` |
+| **受保护本地专属修改清单：防丢弃/回退特性、坐标、契约与自检 Checklist** | `.omp/knowledge/protected-local-features.md` |
 | 架构全图、顶层目录树（哪个目录管什么） | `.omp/knowledge/README.md` |
 | 状态码 / DB 表与字段语义、6 种协议、引擎子系统（auto_proxy、RSS、segment_coordinator…）、旧插件兼容残留、受管组件 | `.omp/knowledge/engine.md` |
 | HTTP API 路由组与鉴权、hub / cli / nmh、已退役 updater 历史 | `.omp/knowledge/hosts-and-api.md` |
@@ -169,7 +170,7 @@ git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水�
   1. **上游直接同步**：`<type>(<scope>): <msg> (upstream <hash>)`（纯引擎/协议直接拣选，保留原意并注 Hash）
   2. **上游修改后纳入**：`<type>(<scope>): <msg> (adapted from <hash>)`（裁剪云端/多余模块后合入，正文说明裁剪项）
   3. **上游无关的本地专属提交**：`<type>(local/<scope>): <msg>` 或 `<type>(<scope>): <msg> (local)`
-  - ⚠️ **本地提交冲突保护铁律（Conflict Guard）**：**上游无关的本地专属改动，在后续同步与上游产生冲突时，AI 严禁自行丢弃、回退或覆盖，必须立刻停手请示用户，由用户决策！**
+  - ⚠️ **本地提交冲突保护铁律（Conflict Guard）**：**上游无关的本地专属改动（详见 [`.omp/knowledge/protected-local-features.md`](.omp/knowledge/protected-local-features.md)），在后续同步与上游产生冲突时，AI 严禁自行丢弃、回退或覆盖，必须立刻停手请示用户，由用户决策！**
 - 流水线是**组件变更检测**式（`changes` job diff `PREV..TAG` 映射路径→`app`/`extension`/`mobile`/`cli`）；`docs/*`、`*.md` 不触发构建。矩阵细节见 `.omp/knowledge/ops.md`。
 
 ---

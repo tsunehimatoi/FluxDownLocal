@@ -5,6 +5,7 @@
 >
 > 提交审计全量台账参见：[`.omp/knowledge/upstream-sync-ledger.md`](upstream-sync-ledger.md)。
 > 精简版产品红线与保留/移除矩阵参见：[`.omp/knowledge/streamlined-edition.md`](streamlined-edition.md)。
+> 受保护本地专属修改清单参见：[`.omp/knowledge/protected-local-features.md`](protected-local-features.md)。
 
 ---
 
@@ -24,6 +25,8 @@
    - 每次同步必须在 [`.omp/knowledge/upstream-sync-ledger.md`](upstream-sync-ledger.md) 中登记每一个提交的判定结果与具体原因。
 6. **本地专属提交冲突保护铁律（Local Conflict Guard）**：
    - **上游无关的本地专属提交（带 `(local)` 标识）**是精简版的核心资产。若后续同步上游时与此类提交发生代码冲突，**AI 严禁自行裁决覆盖、丢弃或回退，必须立即停手向用户请示决策！**
+7. **受保护本地修改清单防丢弃守卫（Protected Local Features Guard）**：
+   - 标题栏清空已完成按钮、Doctor 诊断、扩展角标与动画、aria2 无人值守等已在 [`.omp/knowledge/protected-local-features.md`](protected-local-features.md) 列明的本地特性，同步期间**绝对禁止遗漏或覆盖**，发版前必须逐条核对并通过注入脚本验证。
 
 ---
 
@@ -161,14 +164,20 @@ flutter test
 cargo test -p fluxdown_engine --lib
 cargo test -p fluxdown_api
 cargo test -p fluxdown_cli
+# 5. 受保护本地专属修改自动检测与自愈注入
+powershell -ExecutionPolicy Bypass -File scripts/inject_clear_completed.ps1
 ```
 
-**红线人工核对清单（5 项确认）**：
-- [ ] 检查 `git diff main..HEAD`，确认无 `cloud_auth`、`analytics`、`updater`、`pricing` 相关代码。
-- [ ] 检查设置页，确认无云端登录、更新检查或插件市场入口。
-- [ ] 检查 `native/hub/src/actors/download_actor.rs`，确认 `tokio::select!` 未超过 64 分支上限。
-- [ ] 确认 i18n 仅维护 `en` + `zh` 基线对，未破坏社区语言回退逻辑。
-- [ ] 确认多 CDN 本地解析与断点续传能力完好。
+**受保护本地修改自检核对清单（SOP 必检项，详见 [`.omp/knowledge/protected-local-features.md`](protected-local-features.md)）**：
+- [ ] 1. **标题栏清空已完成按钮**：`scripts/inject_clear_completed.ps1` 校验全通过，`_TitlebarToolButtons` 包含 trash2，`_TitlebarOverlayReservation` 为 5 按钮宽度。
+- [ ] 2. **控制器清理逻辑**：`download_controller.dart` 中包含 `deleteCompletedTasks()` 方法。
+- [ ] 3. **Doctor 环境诊断**：`settings_page.dart` 中存在 `SettingsCategory.doctor` 且 `DoctorReportView` 渲染正常。
+- [ ] 4. **浏览器扩展角标与动画**：`icon-manager.ts` 包含 `formatDownloadingBadge` 且仅显示下载中任务数。
+- [ ] 5. **aria2 无人值守直接下载**：`native/engine/src/download_manager.rs` 包含 `unattended_selection` 逻辑。
+- [ ] 6. **负向红线审查**：检查 `git diff main..HEAD`，确认无 `cloud_auth`、`analytics`、`updater`、`pricing` 相关代码。
+- [ ] 7. **Actor 分支上限**：检查 `native/hub/src/actors/download_actor.rs`，确认 `tokio::select!` 未超过 64 分支上限。
+- [ ] 8. **i18n 基线**：确认 i18n 仅维护 `en` + `zh` 基线对，未破坏社区语言回退逻辑。
+- [ ] 9. **本地 CDN 调度**：确认多 CDN 本地解析与断点续传能力完好。
 
 ### 阶段 5：版本号全量对齐、主干推进与打标
 1. **版本号命名公式**：`v<UpstreamVersion>-local.<LocalBuild>`（例如 `v0.4.7-local.1`）。
