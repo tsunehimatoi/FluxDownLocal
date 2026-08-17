@@ -8,9 +8,6 @@ resolver = "3"
 members = ["native/*"]
 exclude = ["native/engine/vendor/librqbit"]
 
-[patch.crates-io]
-librqbit = { path = "native/engine/vendor/librqbit" }
-
 # 用带 MSE（协议加密）的 fork 覆盖 crates.io 上的 librqbit 8.1.1。
 # 上游 rqbit 尚未实现 RC4 加密（issue #617），这里 vendor 了 librqbit 主 crate
 # 并自研了 MSE 握手（native/engine/vendor/librqbit/src/mse/）。
