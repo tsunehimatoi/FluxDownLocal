@@ -11,7 +11,7 @@
 上游官方仓库（`zerx-lab/FluxDown`）在演进过程中，部分 UI 文件（如 `header_bar.dart`、`settings_page.dart`、`download_controller.dart`）会发生全量重构或覆写。在通过 `git cherry-pick` 纳入上游改动时，极易因 cherry-pick 覆盖而导致精简版本地的独有体验（例如标题栏垃圾桶按钮、Doctor 诊断、扩展动画等）被静默冲掉。
 
 为杜绝此类回归，本分支建立了：
-1. **本清单（坐标与关键契约）**
+1. **本清单（坐标与关键契约）**：**每当产生或变更任何上游无关的本地专属改动（带 `(local)` 标识的 commit）时，AI 必须同回合将改动点、代码坐标与契约登记至本文档！**
 2. **自动化防回退检测与注入脚本（`scripts/inject_clear_completed.ps1` 等）**
 3. **上游同步流程（SOP）中的必经检查卡点（Gate Checkpoint）**
 
@@ -65,7 +65,17 @@
 
 ---
 
-### 特性 4：aria2 RPC / RSS 无人值守直接下载（Unattended Mode）
+### 特性 4：浏览器扩展下载拦截零弹窗机制（Zero Native Popups · Commit `ec7c2dc`）
+
+- **特性说明**：Chrome/Edge 扩展中，`downloads.onDeterminingFilename` 事件在判定为被 FluxDown 接管时，**直接调用 `browser.downloads.cancel(id)` 与 `erase({id})`，绝不调用 `suggest()`**。只有在放行（如禁用拦截、Alt 绕过、App 熔断、白名单）时才调用 `suggest()`（`callSuggestPassthrough()`）。彻底根治无参调用 `suggest()` 导致的浏览器原生「另存为」弹窗或下载托盘闪烁问题。
+- **涉及代码坐标与契约**：
+  | 文件位置 | 关键代码 / 契约 | 作用 |
+  |---|---|---|
+  | `fluxDown/entrypoints/background.ts` | `callSuggestPassthrough()` / `browser.downloads.cancel` | 拦截时直接取消并抹除，放行时才调用 `suggest()` |
+
+---
+
+### 特性 5：aria2 RPC / RSS 无人值守直接下载（Unattended Mode）
 
 - **特性说明**：针对自动化追更场景，在设置开启「跳过二次选择」或通过 aria2 / RSS 创建任务时，BT / 磁力 / 流媒体任务直接落库 `unattended=1` 并自动全选所有文件启动，**绝对不弹出任何文件选择或画质选择弹窗阻断自动化下载**。
 - **涉及代码坐标与契约**：
@@ -77,7 +87,7 @@
 
 ---
 
-### 特性 5：任务列表增强交互
+### 特性 6：任务列表增强交互
 
 - **特性说明**：
   - **列表多选与框选**：支持 Ctrl / Shift 多选及鼠标拖拽框选任务（`task_list.dart`）。
@@ -87,7 +97,7 @@
 
 ---
 
-### 特性 6：本地专属打包与自动化发布脚本
+### 特性 7：本地专属打包与自动化发布脚本
 
 - **涉及文件**：
   - `scripts/build_custom_windows.ps1`：Windows InnoSetup 自动构建与便携包目录装配脚本。
@@ -127,8 +137,9 @@
 - [ ] 2. 标题栏占位宽度：检查 `lib/src/widgets/header_bar.dart` 的 `_TitlebarOverlayReservation` 保底宽度为 5 按钮（`* 5`）。
 - [ ] 3. 控制器清理方法：检查 `lib/src/models/download_controller.dart` 中存在 `deleteCompletedTasks()`。
 - [ ] 4. Doctor 环境诊断：检查 `lib/src/pages/settings_page.dart` 中存在 `SettingsCategory.doctor` 且 `DoctorReportView` 正常引用。
-- [ ] 5. 浏览器扩展角标：检查 `fluxDown/utils/icon-manager.ts` 中存在 `formatDownloadingBadge` 且使用 `OffscreenCanvas` 动画。
-- [ ] 6. aria2 无人值守：检查 `native/engine/src/download_manager.rs` 中包含 `unattended_selection` 逻辑。
-- [ ] 7. 负向红线审查：检查 `git diff main..HEAD`，确认无云端/遥测/更新器/插件代码混入。
-- [ ] 8. 质量门禁全通：`flutter analyze` (0 issue), `flutter test` (全部 pass), `cargo clippy -- -D warnings` (0 warning), `cargo test` (全部 pass)。
+- [ ] 5. 浏览器扩展角标与动画：检查 `fluxDown/utils/icon-manager.ts` 中存在 `formatDownloadingBadge` 且使用 `OffscreenCanvas` 动画。
+- [ ] 6. 浏览器拦截零弹窗：检查 `fluxDown/entrypoints/background.ts` 拦截分支直接 cancel+erase，不调用 `suggest()`。
+- [ ] 7. aria2 无人值守：检查 `native/engine/src/download_manager.rs` 中包含 `unattended_selection` 逻辑。
+- [ ] 8. 负向红线审查：检查 `git diff main..HEAD`，确认无云端/遥测/更新器/插件代码混入。
+- [ ] 9. 质量门禁全通：`flutter analyze` (0 issue), `flutter test` (全部 pass), `cargo clippy -- -D warnings` (0 warning), `cargo test` (全部 pass)。
 ```
