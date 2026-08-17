@@ -443,7 +443,7 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let alive_ip = IpAddr::V4(Ipv4Addr::LOCALHOST);
-        let dead_ip = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
+        let dead_ip = IpAddr::V4(Ipv4Addr::new(240, 0, 0, 1));
         let survivors = probe_alive("probe.example", vec![dead_ip, alive_ip], port, &db).await;
         assert_eq!(survivors, vec![alive_ip]);
         let _ = std::fs::remove_dir_all(&dir);
