@@ -245,9 +245,14 @@ Compress-Archive -Path 'target\release\fluxdown.exe' -DestinationPath 'dist\Flux
 powershell -File scripts\build_custom_windows.ps1 -Version 0.4.7-local.1 -OutputDirectory dist
 Compress-Archive -Path 'build\windows\x64\runner\Release\*' -DestinationPath 'dist\FluxDown-0.4.7-local.1-windows-x64-portable.zip' -Force
 
-# 5. 油猴用户脚本归档与 SHA256 摘要生成
+# 5. 油猴用户脚本归档
 Copy-Item 'userscript\fluxdown.user.js' 'dist\fluxdown.user.js' -Force
-Get-FileHash dist\* -Algorithm SHA256 | Select-Object @{Name='File';Expression={Split-Path $_.Path -Leaf}}, Hash | Format-Table -AutoSize
+
+# 6. 一键发布至 GitHub Releases 并上传附件（全平台 8 件套）
+# 规范铁律：
+# - 严禁 emoji，严禁冗余更新说明，正文仅保留「文件名 | 说明」纯 Markdown 表格。
+# - 安全零泄露：Token 仅在运行时内存通过 git credential fill 动态获取，绝对不落盘、不提交。
+python scripts/publish_release.py --tag v0.4.7-local.1
 ```
 
 ---

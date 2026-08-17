@@ -94,6 +94,7 @@ cd fluxDown && npm run dev            # 精简浏览器扩展；dev:firefox / bu
 # ── OpenAPI / 图标 / 发布 ──
 cargo run -p fluxdown_api --example gen_openapi > openapi.json   # 导出 OpenAPI 规范
 bun scripts/gen_icons.ts              # 改 assets/logo/fluxdown_logo.svg 后全平台图标一键生成
+python scripts/publish_release.py --tag vX.Y.Z-local.N   # 一键发布 GitHub Release 并上传 dist/ 全套附件与校验码
 git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin vX.Y.Z   # 触发发布流水线（稳定版从 stable，预览 -rc.N 从 main；见 §6）
 ```
 

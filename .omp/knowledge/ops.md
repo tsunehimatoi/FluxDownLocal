@@ -113,13 +113,17 @@ pwsh -Command @"
 
 ### 3. 发布至 GitHub Releases 流程
 
-1. **分支对齐**：确保 `main` 与 `stable` 分支已合并最新代码并推送到 remote（`origin`）。
-2. **创建/更新 Release 并上传附件**：
-   使用 GitHub REST API（带 `repo` 权限的 Token）：
-   - Release 说明仅保留纯表格形式的下载清单与 SHA256 校验码，不放置营销或多余文案。
-   - `POST https://api.github.com/repos/{owner}/{repo}/releases` 创建 Release（指定 tag 如 `v0.4.6-local.1`，目标分支 `main`）。
-   - 遍历 `dist/` 目录，逐个向 `https://uploads.github.com/repos/{owner}/{repo}/releases/{release_id}/assets?name={filename}` 发送 `POST` 请求上传二进制数据（设置对应 `Content-Type`）。
-3. **验证**：访问仓库 Release 页面（例如 `https://github.com/<owner>/<repo>/releases`）核对附件清单与 SHA256 摘要。
+1. **分支与 Tag 对齐**：确保 `main` 与 `stable` 分支已快进推进并推送到 remote（`origin`），且 Tag `v<UpstreamVersion>-local.<N>` 已推送到 remote。
+2. **一键上传 Release 与 8 件套附件**：
+   运行标准发布脚本：
+   ```bash
+   python scripts/publish_release.py --tag v<UpstreamVersion>-local.<N>
+   ```
+   **三项发布铁律**：
+   - **格式纯净**：严禁 emoji，严禁冗余更新说明，Release 正文**仅保留「文件名 | 说明」纯 Markdown 表格**。
+   - **安全零泄露**：Token 仅在运行时内存通过 `git credential fill` 或 `GITHUB_TOKEN` 动态获取，严禁落盘或提交入库。
+   - **产物齐全**：必须完整上传 8 件套（Windows 安装包、便携包、CLI 压缩包、CLI 独立文件、Chrome 扩展、Firefox 扩展、Edge 扩展、油猴脚本）。
+3. **验证**：访问仓库 Release 页面（例如 `https://github.com/tsunehimatoi/FluxDownLocal/releases`）核对 8 个附件与说明表格。
 
 ---
 
