@@ -7,20 +7,14 @@ import 'package:shadcn_ui/shadcn_ui.dart';
 import 'package:rinf/rinf.dart';
 import '../bindings/bindings.dart' show DuplicateTorrentNotice;
 import '../widgets/flux_sonner.dart';
-import '../../main.dart';
 import '../i18n/locale_provider.dart';
 import '../models/download_controller.dart';
 import '../models/download_task.dart';
 import '../models/list_entity.dart';
-import '../models/plugin_provider.dart';
 import '../models/rss_provider.dart';
 import '../models/settings_provider.dart';
 import '../models/view_prefs.dart';
 import '../services/external_download_service.dart';
-import '../services/cloud/cdn_config_service.dart';
-import '../services/cloud/cdn_report_service.dart';
-import '../services/cloud/config_sync_service.dart';
-import '../services/cloud/remote_task_service.dart';
 import '../services/link/local_pairing_service.dart';
 import '../services/log_service.dart';
 import '../services/kv_store.dart';
@@ -57,10 +51,8 @@ class AppMenuCallbacks {
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.settingsProvider});
-
-  /// 由 [FluxDownApp] 持有并与应用级服务共享，HomePage 不负责释放。
-  final SettingsProvider settingsProvider;
+  final SettingsProvider? settingsProvider;
+  const HomePage({super.key, this.settingsProvider});
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -69,7 +61,6 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final _controller = DownloadController();
   late final SettingsProvider _settingsProvider;
-  final _pluginProvider = PluginProvider();
   final _rssProvider = RssProvider();
   final _headerBarKey = GlobalKey<HeaderBarState>();
 
@@ -108,12 +99,10 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _settingsProvider = widget.settingsProvider;
     logInfo('HomePage', 'initState');
-    // 配置请求由持有共享 SettingsProvider 的 FluxDownApp 统一发送一次。
-    // 请求插件列表 + 订阅熔断器自动禁用通知（弹 toast）
-    _pluginProvider.requestPlugins();
-    _pluginProvider.addListener(_onPluginProviderChanged);
+    _settingsProvider = widget.settingsProvider ?? SettingsProvider();
+    // 请求 Rust 端加载下载配置
+    _settingsProvider.requestConfig();
     // BT 重复添加通知：引擎已删除占位任务行，弹提示指向已有任务。
     _dupTorrentSub = DuplicateTorrentNotice.rustSignalStream.listen(
       _onDuplicateTorrent,
@@ -139,22 +128,6 @@ class _HomePageState extends State<HomePage> {
     PowerService.instance.bind(_controller, _settingsProvider);
     // 「任务完成后关机」服务（纯内存状态，重启不保留）
     ShutdownService.instance.bind(_controller);
-    // FluxCloud 配置同步：providers 就绪后接线；远端应用/失败均弹 toast。
-    ConfigSyncService.instance.onRemoteApplied = _onSyncRemoteApplied;
-    ConfigSyncService.instance.addListener(_onConfigSyncChanged);
-    unawaited(
-      ConfigSyncService.instance.attach(
-        settings: _settingsProvider,
-        theme: FluxDownApp.of(context),
-        locale: localeNotifier,
-      ),
-    );
-    // FluxCloud 跨设备任务协同：providers 就绪后接线，登录即开 SSE 长连回流进度。
-    unawaited(RemoteTaskService.instance.attach());
-    // FluxCloud CDN 聚合下载云端配置：登录即拉 + 12h 周期刷新，失败静默。
-    unawaited(CdnConfigService.instance.attach());
-    // FluxCloud CDN 众包遥测上报：常开，登录即上报一次 + 30min 周期，失败静默保留。
-    unawaited(CdnReportService.instance.attach());
     // 本地设备互联（局域网配对，免账号）：与账号体系无关，启动即接线监听。
     // 移动端不支持局域网直连（native/hub/build.rs 在 android/ios 上不编译
     // hub_link，LocalPairingService.supported 恒为 false），显式跳过更
@@ -167,27 +140,6 @@ class _HomePageState extends State<HomePage> {
     if (Platform.isWindows) {
       _settingsProvider.addListener(_onSettingsLoadedForAssocPrompt);
     }
-  }
-
-  /// 熔断器自动禁用插件时弹出提示。
-  int _lastAutoDisabledSeq = -1;
-  void _onPluginProviderChanged() {
-    if (!mounted) return;
-    final seq = _pluginProvider.autoDisabledSeq;
-    if (seq == _lastAutoDisabledSeq) return;
-    _lastAutoDisabledSeq = seq;
-    final notice = _pluginProvider.lastAutoDisabledNotice;
-    if (notice == null) return;
-    final matches = _pluginProvider.plugins.where(
-      (p) => p.identity == notice.identity,
-    );
-    final name = matches.isEmpty ? notice.identity : matches.first.name;
-    FluxSonner.of(context).show(
-      ShadToast.destructive(
-        title: Text(currentS.pluginAutoDisabledToast(name)),
-        duration: const Duration(seconds: 4),
-      ),
-    );
   }
 
   /// BT 重复添加（同 info-hash 已被其他任务下载/做种）→ 提示已有任务。
@@ -248,22 +200,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 远端设备同步条目被实际应用后弹 toast（[ConfigSyncService.onRemoteApplied]）。
-  void _onSyncRemoteApplied(int count, String? deviceName) {
-    if (!mounted) return;
-    FluxSonner.of(context).show(
-      ShadToast(
-        title: Text(
-          currentS.cloudSyncAppliedToast(
-            count,
-            deviceName ?? currentS.cloudSyncOtherDevice,
-          ),
-        ),
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
   /// 本机作为被添加方收到配对请求（`incomingPairing` 非空）时弹出核验框
   /// （SAS + 60s 倒计时 + 接受/拒绝，见 incoming_pairing_dialog.dart）；
   /// 弹窗自身监听同一服务、会话失效时自动关闭，这里只负责按需打开且防重入。
@@ -279,25 +215,6 @@ class _HomePageState extends State<HomePage> {
       // 都失败且无提示）。这里补一次主动检查，把期间积压的新会话接上。
       _onLocalPairingChanged();
     });
-  }
-
-  /// 同步失败态弹 toast；同一条错误文案去重，避免退避重试期间反复弹出。
-  String? _lastSyncErrorNotified;
-  void _onConfigSyncChanged() {
-    if (!mounted) return;
-    final sync = ConfigSyncService.instance;
-    if (sync.status != CloudSyncStatus.error || sync.lastError == null) {
-      _lastSyncErrorNotified = null;
-      return;
-    }
-    if (sync.lastError == _lastSyncErrorNotified) return;
-    _lastSyncErrorNotified = sync.lastError;
-    FluxSonner.of(context).show(
-      ShadToast.destructive(
-        title: Text(currentS.cloudSyncFailedToast(sync.lastError!)),
-        duration: const Duration(seconds: 4),
-      ),
-    );
   }
 
   /// 浏览器扩展触发下载时，若当前在设置页则自动切回首页。
@@ -322,18 +239,15 @@ class _HomePageState extends State<HomePage> {
     HardwareKeyboard.instance.removeHandler(_onGlobalKey);
     _settingsProvider.removeListener(_checkSidebarVisibility);
     _settingsProvider.removeListener(_onSettingsLoadedForAssocPrompt);
-    ConfigSyncService.instance.removeListener(_onConfigSyncChanged);
-    ConfigSyncService.instance.onRemoteApplied = null;
     LocalPairingService.instance.removeListener(_onLocalPairingChanged);
-    _pluginProvider.removeListener(_onPluginProviderChanged);
     _dupTorrentSub?.cancel();
-    _pluginProvider.dispose();
     _rssProvider.removeListener(_onRssProviderChanged);
     _rssProvider.dispose();
     _controller.removeListener(_onControllerChanged);
     _controller.onTaskCompleted = null;
     _controller.onSegmentsUpdateResult = null;
     _controller.dispose();
+    _settingsProvider.dispose();
     _viewPrefsStore.dispose();
     super.dispose();
     logInfo('HomePage', 'dispose done');
@@ -364,18 +278,6 @@ class _HomePageState extends State<HomePage> {
     };
     AppMenuCallbacks.selectAll = () {
       if (!mounted || _showSettings || _isRssView) return;
-      // 输入框聚焦时把 Cmd+A 转回文本全选——菜单加速键已吞掉按键事件，
-      // 不转发的话输入框既收不到按键也得不到全选。
-      if (_isTextFieldFocused) {
-        final ctx = FocusManager.instance.primaryFocus?.context;
-        if (ctx != null) {
-          Actions.maybeInvoke(
-            ctx,
-            const SelectAllTextIntent(SelectionChangedCause.keyboard),
-          );
-        }
-        return;
-      }
       if (!_controller.isManageMode) _controller.enterManageMode();
       _controller.selectAllFiltered();
     };
@@ -468,8 +370,6 @@ class _HomePageState extends State<HomePage> {
     // 通知服务内部做 800ms 防抖合批（多文件 → "N 个文件已下载"），
     // 此处无需再做汇总聚合。
     NotificationService.instance.showDownloadComplete(task);
-    // CDN 遥测事件驱动上报：任务完成 → 10s 去抖后上传本轮样本。
-    CdnReportService.instance.notifyTaskCompleted();
   }
 
   /// 「修改线程数」结果提示。成功 → 普通 toast；被拒（任务非暂停态）→
@@ -512,12 +412,8 @@ class _HomePageState extends State<HomePage> {
       return true;
     }
 
-    // Cmd/Ctrl+A → 全选当前筛选列表（自动进入管理模式）。RSS 视图下不
-    // 适用；输入框聚焦时让路——把按键留给输入框做文本全选。
-    if (isMod &&
-        event.logicalKey == LogicalKeyboardKey.keyA &&
-        !_isRssView &&
-        !_isTextFieldFocused) {
+    // Cmd/Ctrl+A → 全选当前筛选列表（自动进入管理模式）。RSS 视图下不适用。
+    if (isMod && event.logicalKey == LogicalKeyboardKey.keyA && !_isRssView) {
       if (!_controller.isManageMode) {
         _controller.enterManageMode();
       }
@@ -624,9 +520,9 @@ class _HomePageState extends State<HomePage> {
   }
 
   /// 是否有文本输入组件（TextField/ShadInput 等，内部均落到 [EditableText]）
-  /// 持有焦点——全局单字母快捷键（V/G/S/Shift+D/↑↓/Space）与 Ctrl/Cmd+A
-  /// 必须在此时让路，否则会拦截用户在搜索框等处的正常输入/文本全选。
-  /// 其余 Ctrl/Cmd 组合键与 Esc/Del 不受此守卫影响。
+  /// 持有焦点——全局单字母快捷键（V/G/S/Shift+D/↑↓/Space）必须在此时让路，
+  /// 否则会拦截用户在搜索框等处的正常输入。Ctrl/Cmd 组合键与 Esc/Del 不受
+  /// 此守卫影响（现状行为不变）。
   bool get _isTextFieldFocused {
     final focus = FocusManager.instance.primaryFocus;
     final ctx = focus?.context;
@@ -736,15 +632,15 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  /// 从搜索结果 / RSS 条目流直达任务（P5 溯源的正向跳转）。
+  /// 从 RSS 条目流的「已下载」chip 跳到对应任务（P5 溯源的正向跳转）。
   ///
-  /// 先退出条目流再定位：条目流与任务列表共用主区，不退出的话选中了也
-  /// 看不见。筛选放宽（状态页签/分类/队列）、组展开、滚动定位
-  /// 由 [DownloadController.revealTask] + TaskList 完成。
-  void _revealTask(String taskId) {
+  /// 先退出条目流再选中任务：条目流与任务列表共用主区，不退出的话选中了也
+  /// 看不见。同时把状态页签切回「全部」，否则任务可能被当前页签筛掉。
+  void _revealTaskFromRss(String taskId) {
     if (taskId.isEmpty) return;
     _rssProvider.select('');
-    _controller.revealTask(taskId);
+    _controller.setStatusTab(StatusTab.all);
+    _controller.selectTask(taskId);
     setState(() => _isDetailOpen = true);
   }
 
@@ -910,7 +806,7 @@ class _HomePageState extends State<HomePage> {
                 if (_rssProvider.selectedSourceId.isEmpty) return taskList!;
                 return RssItemList(
                   provider: _rssProvider,
-                  onOpenTask: _revealTask,
+                  onOpenTask: _revealTaskFromRss,
                   onManage: (sourceId) => showRssManagerDialog(
                     context,
                     _rssProvider,
@@ -984,7 +880,6 @@ class _HomePageState extends State<HomePage> {
                 _initialSettingsHighlight = null;
               }),
               settingsProvider: _settingsProvider,
-              pluginProvider: _pluginProvider,
               downloadController: _controller,
               initialCategory: _initialSettingsCategory,
               initialHighlight: _initialSettingsHighlight,
@@ -1078,7 +973,6 @@ class _HomePageState extends State<HomePage> {
                   _controller,
                   _settingsProvider,
                 ),
-                onRevealTask: _revealTask,
                 onNavigateToSettings: (item) {
                   setState(() {
                     _initialSettingsCategory = item.category;

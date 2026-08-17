@@ -8,7 +8,6 @@ import 'package:launch_at_startup/launch_at_startup.dart';
 import 'package:rinf/rinf.dart';
 import 'package:shadcn_ui/shadcn_ui.dart';
 import 'src/widgets/flux_sonner.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 import 'src/bindings/bindings.dart';
 import 'src/services/window_state_service.dart';
@@ -25,7 +24,6 @@ import 'src/services/floating_ball/wayland_degradation_service.dart';
 import 'src/services/hls_quality_service.dart';
 import 'src/services/resolve_variant_service.dart';
 import 'src/services/bt_file_selection_service.dart';
-import 'src/services/analytics_service.dart';
 import 'src/services/app_icon_service.dart';
 import 'src/services/log_service.dart';
 import 'src/services/kv_store.dart';
@@ -33,13 +31,10 @@ import 'src/services/notification_service.dart';
 import 'src/services/power_service.dart';
 import 'src/services/tray_service.dart';
 import 'src/i18n/locale_provider.dart';
-import 'src/services/update_service.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/flux_theme_tokens.dart';
 import 'src/theme/theme_provider.dart';
-import 'src/widgets/feedback_dialog.dart';
 import 'src/widgets/ui_scale_widget.dart';
-import 'src/widgets/update_changelog_dialog.dart';
 
 /// 启动阶段的非关键步骤统一加超时保护和日志，
 /// 防止某一步卡住导致整个应用白屏。
@@ -61,8 +56,6 @@ Future<void> _runStartupStep(
       stack,
     );
   }
-}
-
 /// 记录 Flutter 官方定义的启动边界：引擎完成首帧栅格化。
 void _logFirstFrameWhenRasterized(Stopwatch startupStopwatch) {
   unawaited(
@@ -77,6 +70,7 @@ void _logFirstFrameWhenRasterized(Stopwatch startupStopwatch) {
 }
 
 Future<void> main(List<String> args) async {
+  final startupStopwatch = Stopwatch()..start();
   // 独立快速下载小窗引擎入口：原生宿主以 --quick-popup 参数启动第二引擎。
   // 该引擎零插件注册、不初始化 Rust，所有环境数据经 fluxdown/popup_child
   // 通道注入（见 lib/src/popup/popup_app.dart）。必须在任何插件调用之前分发。
@@ -86,7 +80,6 @@ Future<void> main(List<String> args) async {
   }
 
   WidgetsFlutterBinding.ensureInitialized();
-  final startupStopwatch = Stopwatch()..start();
 
   // 初始化日志服务 — 必须尽早执行。
   // 预览版 Windows 上若 SharedPreferences / 插件初始化卡住，
@@ -94,17 +87,12 @@ Future<void> main(List<String> args) async {
   LogService.instance.init();
   logInfo('main', 'bootstrap start, args=$args');
 
-  // 必须早于所有 provider/service 读取。便携模式使用 exe 目录 settings.json。
+  // 初始化键值存储门面 — 必须早于任何 provider/service 读取（locale/theme/
+  // 窗口状态）。便携模式下改写 exe 目录 settings.json，消除首次打开写 C 盘。
   await _runStartupStep('kv store init', () => KvStore.instance.init());
 
-  // 主题只依赖已载入的 KvStore，与翻译资源加载互不依赖。并发等待可让
-  // AssetBundle I/O 与本地主题解析重叠，同时仍保证 runApp 前主题和语言
-  // 都已就绪，不引入首帧闪烁。
-  final themeProvider = ThemeProvider();
-  await Future.wait<void>([
-    _runStartupStep('i18n load', I18nStore.load),
-    _runStartupStep('theme init', () => themeProvider.init()),
-  ]);
+  // 初始化 i18n — 创建 LocaleNotifier 并从 SharedPreferences 恢复语言偏好
+  await _runStartupStep('i18n load', I18nStore.load);
   localeNotifier = LocaleNotifier();
   await _runStartupStep('locale init', () => localeNotifier.init());
 
@@ -150,7 +138,11 @@ Future<void> main(List<String> args) async {
     return true; // 已处理，不再向上传播
   };
 
-  logInfo('main', 'theme and locale init steps finished');
+  logInfo('main', 'initializing theme...');
+  // 在 runApp 之前恢复主题设置，避免启动时主题闪烁
+  final themeProvider = ThemeProvider();
+  await _runStartupStep('theme init', () => themeProvider.init());
+  logInfo('main', 'theme init step finished');
 
   // ===== 移动端启动流程 =====
   // Android / iOS 走精简初始化：无窗口管理、托盘、开机启动等桌面服务。
@@ -168,9 +160,6 @@ Future<void> main(List<String> args) async {
     return;
   }
 
-  // Rust、窗口、开机启动和托盘互不依赖。旧流程将四条 I/O 链完全串行，
-  // 任何一条慢路径都会直接累加到首帧时间。这里在同一 isolate 上并发等待
-  // I/O（不是多线程执行 Dart），仍在 runApp 前汇合，确保首帧契约不变。
   final windowManagerReady = windowManager.ensureInitialized();
 
   final rustInit = () async {
@@ -367,7 +356,7 @@ class _FluxDownAppState extends State<FluxDownApp>
   late final ThemeProvider themeProvider;
   late final LocaleNotifier _localeNotifier;
   final _navigatorKey = GlobalKey<NavigatorState>();
-  // App 级服务与 HomePage 共享同一个配置实例，避免重复订阅五条 Rust 信号、
+  // App 级服务与 HomePage 共享同一个配置实例，避免重复订阅 Rust 信号、
   // 重复读取完整配置，并维持 SettingsProvider.globalInstance 单一所有者。
   final _settingsForExternal = SettingsProvider();
 
@@ -433,26 +422,12 @@ class _FluxDownAppState extends State<FluxDownApp>
     // 请求加载配置，确保 settingsProvider 有默认保存目录等数据
     _settingsForExternal.requestConfig();
 
-    // 匿名统计 — 配置加载完成后上报首装/每日活跃事件（不含任何下载任务信息）
-    AnalyticsService.instance.init(_settingsForExternal);
-
     // 悬浮球服务 — 配置加载完成后初始化（S0.5 初始化钩子）
     _initFloatingBallAfterConfigLoad();
 
     // 启动时最小化到托盘：配置加载完成后按设置决定是否隐藏主窗口
     // （原生层 first_frame_cb 默认会显示窗口，此处按用户设置补做隐藏）
     _applyStartMinimizedToTrayAfterConfigLoad();
-
-    // 延迟 5 秒后台静默检查更新（避免阻塞启动流程）
-    Future.delayed(const Duration(seconds: 5), () {
-      if (!mounted) return;
-      if (!_settingsForExternal.autoCheckUpdate) {
-        logInfo('FluxDownApp', 'auto check for updates skipped (disabled)');
-        return;
-      }
-      logInfo('FluxDownApp', 'auto check for updates');
-      UpdateService.instance.checkForUpdate();
-    });
 
     // Handle .torrent files and fluxdown:// protocol URLs passed via
     // command-line args (Windows file association / protocol handler).
@@ -468,14 +443,6 @@ class _FluxDownAppState extends State<FluxDownApp>
       _waitForConfigAndHandleTorrentFiles();
     }
 
-    // 监听更新服务 — changelog 就绪后自动弹出更新日志弹窗
-    UpdateService.instance.addListener(_onUpdateServiceChanged);
-    // 主动消费一次：若失败标记响应在监听器注册前就已到达（notifyListeners
-    // 已触发但当时无监听者），此处补偿一次，避免错过更新失败提示。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _onUpdateServiceChanged();
-    });
-
     // Listen for args from second instances (single-instance enforcement).
     // When a second instance is launched (e.g. double-clicking a .torrent
     // file while the app is already running), the native C++ layer sends
@@ -489,7 +456,6 @@ class _FluxDownAppState extends State<FluxDownApp>
   void dispose() {
     logInfo('FluxDownApp', 'dispose called');
     _pendingRescan?.cancel();
-    UpdateService.instance.removeListener(_onUpdateServiceChanged);
     _singleInstanceChannel.setMethodCallHandler(null);
     TrayService.instance.onExitApp = null;
     HlsQualityService.shutdown();
@@ -546,70 +512,6 @@ class _FluxDownAppState extends State<FluxDownApp>
     if (mounted) setState(() {});
     // 语言变更后刷新托盘菜单
     TrayService.instance.refreshMenu();
-  }
-
-  /// 当 UpdateService 状态变化时，检查是否应该弹出更新日志弹窗 / 更新失败提示。
-  void _onUpdateServiceChanged() {
-    final svc = UpdateService.instance;
-
-    // 优先处理「上次更新失败」标记（便携版覆盖文件失败等）。
-    if (svc.pendingFailureMessage.isNotEmpty) {
-      _showUpdateFailureDialog(svc.pendingFailureMessage);
-      // 立刻确认，避免 notifyListeners 再次触发重复弹窗。
-      svc.acknowledgeFailureMarker();
-      return;
-    }
-
-    if (!svc.shouldShowChangelog) return;
-    if (!mounted) return;
-
-    final ctx = _navigatorKey.currentContext;
-    if (ctx == null) return;
-
-    logInfo('FluxDownApp', 'showing update changelog dialog');
-    svc.markChangelogShown();
-
-    showUpdateChangelogDialog(
-      ctx,
-      releases: svc.changelogReleases,
-      latestVersion: svc.checkResult?.latestVersion ?? '',
-      currentVersion: svc.currentVersion,
-      onUpdate: () => svc.downloadUpdate(),
-      onLater: () {
-        // No-op — dialog already dismissed, changelog marked as shown.
-      },
-    );
-  }
-
-  /// 弹出「上次更新失败」提示对话框，引导用户手动恢复 / 重新下载。
-  void _showUpdateFailureDialog(String message) {
-    if (!mounted) return;
-    final ctx = _navigatorKey.currentContext;
-    if (ctx == null) return;
-
-    final s = S.of(currentLocale);
-    logInfo('FluxDownApp', 'showing update failure dialog');
-
-    showShadDialog<void>(
-      context: ctx,
-      builder: (dialogCtx) => ShadDialog.alert(
-        title: Text(s.updateFailedTitle),
-        description: Padding(
-          padding: const EdgeInsets.only(top: 8),
-          child: Text(message),
-        ),
-        actions: [
-          ShadButton.outline(
-            onPressed: () => launchUrl(Uri.parse('https://fluxdown.zerx.dev')),
-            child: Text(s.updateFailedOpenSite),
-          ),
-          ShadButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(),
-            child: Text(s.confirm),
-          ),
-        ],
-      ),
-    );
   }
 
   /// Wait for SettingsProvider to finish loading config from Rust, then handle
@@ -1116,10 +1018,6 @@ class _FluxDownAppState extends State<FluxDownApp>
                 label: s.menuAbout,
                 onSelected: () => AppMenuCallbacks.openAbout?.call(),
               ),
-              PlatformMenuItem(
-                label: s.menuCheckForUpdates,
-                onSelected: () => UpdateService.instance.checkForUpdate(),
-              ),
             ],
           ),
           // Settings
@@ -1295,24 +1193,6 @@ class _FluxDownAppState extends State<FluxDownApp>
                 onSelected: () => macMenuAction('front'),
               ),
             ],
-          ),
-        ],
-      ),
-
-      // ── 帮助 ──
-      PlatformMenu(
-        label: s.menuHelp,
-        menus: [
-          PlatformMenuItem(
-            label: s.menuWebsite,
-            onSelected: () => launchUrl(Uri.parse('https://fluxdown.zerx.dev')),
-          ),
-          PlatformMenuItem(
-            label: s.menuFeedback,
-            onSelected: () {
-              final ctx = _navigatorKey.currentContext;
-              if (ctx != null) showFeedbackDialog(ctx);
-            },
           ),
         ],
       ),
