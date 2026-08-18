@@ -58,7 +58,7 @@ class QuickPopupApp extends StatefulWidget {
 class _QuickPopupAppState extends State<QuickPopupApp> {
   QuickPopupPayload? _payload;
 
-  /// 载荷代次 — 每次 setPayload 递增，作为表单子树的 Key 强制重置表单状态
+  /// 载荷代次 — 每次 setPayload 递增，强制重建 Navigator/Overlay 与表单状态。
   int _epoch = 0;
 
   /// 表单外部控制器 — appendPayload（小窗可见期间新请求合入表单）用。
@@ -133,10 +133,10 @@ class _QuickPopupAppState extends State<QuickPopupApp> {
                 child: FluxSonner(
                   child: ExcludeSemantics(
                     child: WidgetsApp(
+                      key: ValueKey(_epoch),
                       color: theme.colorScheme.primary,
                       debugShowCheckedModeBanner: false,
                       home: _PopupShell(
-                        key: ValueKey(_epoch),
                         payload: payload,
                         formController: _formController,
                         relayBus: _relayBus,
@@ -172,7 +172,6 @@ class _PopupShell extends StatefulWidget {
   final _PopupRelayBus relayBus;
 
   const _PopupShell({
-    super.key,
     required this.payload,
     required this.formController,
     required this.relayBus,
