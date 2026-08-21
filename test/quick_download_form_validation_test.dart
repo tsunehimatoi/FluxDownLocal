@@ -13,9 +13,6 @@ class _FakeHost implements QuickDownloadFormHost {
   List<QuickQueueOption> get queues => const [];
 
   @override
-  List<QuickDeviceOption> get devices => const [];
-
-  @override
   int get defaultSegments => 0;
 
   @override
